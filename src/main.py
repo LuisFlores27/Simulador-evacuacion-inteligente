@@ -1,5 +1,6 @@
 from emergency.scenario import EmergencyScenario
 from evacuation.person import Person
+from evacuation.grid import Grid
 
 
 def main():
@@ -22,12 +23,19 @@ def main():
         (4, 4)
     ])
 
+    grid = Grid(5, 5)
+
+    grid.set_obstacle(2, 2)
+
     print("Simulador de Evacuación Inteligente")
     print("-----------------------------------")
     print(scenario)
     print()
     print(person)
     print("Ruta:", person.route)
+    print()
+    print("Mapa:")
+    print(grid)
 
 
 if __name__ == "__main__":
