@@ -1,7 +1,7 @@
 from emergency.scenario import EmergencyScenario
 from evacuation.person import create_people
 from evacuation.grid import Grid
-from evacuation.astar import AStar
+from evacuation.manager import EvacuationManager
 
 
 def main():
@@ -31,18 +31,14 @@ def main():
     grid.set_exit(0, 4)
     grid.set_exit(4, 4)
 
-    astar = AStar(grid)
+    evacuation = EvacuationManager(
+        grid,
+        people
+    )
 
-    exits = grid.get_exits()
+    evacuation.calculate_routes()
 
-    for person in people:
-        best_exit, route, cost = astar.find_best_exit(
-            person.position,
-            exits
-        )
-
-        person.target_exit = best_exit
-        person.set_route(route)
+    summary = evacuation.get_evacuation_summary()
 
     print("Simulador de Evacuación Inteligente")
     print("-----------------------------------")
@@ -54,7 +50,7 @@ def main():
     print()
 
     print("Salidas disponibles:")
-    print(exits)
+    print(grid.get_exits())
     print()
 
     print("Personas:")
@@ -64,6 +60,17 @@ def main():
         print(person)
         print("Ruta:", person.route)
         print()
+
+    print("Resumen de evacuación:")
+    print(
+        f"Personas totales: "
+        f"{summary['total_people']}"
+    )
+
+    print(
+        f"Personas con ruta: "
+        f"{summary['people_with_route']}"
+    )
 
 
 if __name__ == "__main__":
