@@ -21,20 +21,46 @@ class Grid:
 
         return None
 
-    def set_obstacle(self, x, y):
+    def set_node_type(self, x, y, node_type):
         node = self.get_node(x, y)
 
         if node:
-            node.walkable = False
+            node.node_type = node_type
+
+    def set_obstacle(self, x, y):
+        self.set_node_type(x, y, "obstaculo")
+
+    def set_danger(self, x, y):
+        self.set_node_type(x, y, "peligro")
+
+    def set_exit(self, x, y):
+        self.set_node_type(x, y, "salida")
+
+    def get_exits(self):
+        exits = []
+
+        for row in self.nodes:
+            for node in row:
+                if node.node_type == "salida":
+                    exits.append(node.position)
+
+        return exits
 
     def __str__(self):
+        symbols = {
+            "libre": ".",
+            "obstaculo": "#",
+            "peligro": "!",
+            "salida": "E"
+        }
+
         result = []
 
         for row in self.nodes:
             line = ""
 
             for node in row:
-                line += "." if node.walkable else "#"
+                line += symbols.get(node.node_type, "?")
 
             result.append(line)
 

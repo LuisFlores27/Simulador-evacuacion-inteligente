@@ -33,6 +33,12 @@ class AStar:
 
         return neighbors
 
+    def get_movement_cost(self, node):
+        if node.node_type == "peligro":
+            return 5
+
+        return 1
+
     def find_path(self, start_position, goal_position):
         start = self.grid.get_node(
             start_position[0],
@@ -78,8 +84,11 @@ class AStar:
                 )
 
             for neighbor in self.get_neighbors(current):
+                movement_cost = self.get_movement_cost(neighbor)
+
                 new_cost = (
-                    cost_so_far[current.position] + 1
+                    cost_so_far[current.position]
+                    + movement_cost
                 )
 
                 if (
@@ -101,6 +110,43 @@ class AStar:
                     came_from[neighbor.position] = current.position
 
         return []
+
+    def find_best_exit(self, start_position, exits):
+        best_path = []
+        best_cost = float("inf")
+        best_exit = None
+
+        for exit_position in exits:
+            path = self.find_path(
+                start_position,
+                exit_position
+            )
+
+            if not path:
+                continue
+
+            cost = self.calculate_path_cost(path)
+
+            if cost < best_cost:
+                best_cost = cost
+                best_path = path
+                best_exit = exit_position
+
+        return best_exit, best_path, best_cost
+
+
+    def calculate_path_cost(self, path):
+        total_cost = 0
+
+        for position in path[1:]:
+            node = self.grid.get_node(
+                position[0],
+                position[1]
+            )
+
+            total_cost += self.get_movement_cost(node)
+
+        return total_cost
 
     def reconstruct_path(self, came_from, current):
         path = [current]

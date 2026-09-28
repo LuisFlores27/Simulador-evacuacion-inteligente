@@ -19,3 +19,16 @@ class Person:
             f"Salida objetivo: {self.target_exit} | "
             f"Evacuada: {self.evacuated}"
         )
+
+def create_people(positions):
+    people = []
+
+    for person_id, position in enumerate(positions, start=1):
+        people.append(
+            Person(
+                person_id=person_id,
+                position=position
+            )
+        )
+
+    return people

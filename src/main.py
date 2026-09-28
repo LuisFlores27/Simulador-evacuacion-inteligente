@@ -1,5 +1,5 @@
 from emergency.scenario import EmergencyScenario
-from evacuation.person import Person
+from evacuation.person import create_people
 from evacuation.grid import Grid
 from evacuation.astar import AStar
 
@@ -12,11 +12,13 @@ def main():
         blocked_exit="norte"
     )
 
-    person = Person(
-        person_id=1,
-        position=(0, 0),
-        target_exit=(4, 4)
-    )
+    people = create_people([
+        (0, 0),
+        (1, 0),
+        (0, 1),
+        (4, 0),
+        (4, 1)
+    ])
 
     grid = Grid(5, 5)
 
@@ -24,26 +26,44 @@ def main():
     grid.set_obstacle(2, 1)
     grid.set_obstacle(2, 2)
 
+    grid.set_danger(1, 2)
+
+    grid.set_exit(0, 4)
+    grid.set_exit(4, 4)
+
     astar = AStar(grid)
 
-    route = astar.find_path(
-        person.position,
-        person.target_exit
-    )
+    exits = grid.get_exits()
 
-    person.set_route(route)
+    for person in people:
+        best_exit, route, cost = astar.find_best_exit(
+            person.position,
+            exits
+        )
+
+        person.target_exit = best_exit
+        person.set_route(route)
 
     print("Simulador de Evacuación Inteligente")
     print("-----------------------------------")
     print(scenario)
     print()
-    print(person)
-    print()
+
     print("Mapa:")
     print(grid)
     print()
-    print("Ruta encontrada:")
-    print(person.route)
+
+    print("Salidas disponibles:")
+    print(exits)
+    print()
+
+    print("Personas:")
+    print()
+
+    for person in people:
+        print(person)
+        print("Ruta:", person.route)
+        print()
 
 
 if __name__ == "__main__":
