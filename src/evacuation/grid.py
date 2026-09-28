@@ -46,6 +46,13 @@ class Grid:
 
         return exits
 
+    def block_exit(self, position):
+        self.set_node_type(
+            position[0],
+            position[1],
+            "obstaculo"
+        )
+
     def __str__(self):
         symbols = {
             "libre": ".",

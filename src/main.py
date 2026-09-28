@@ -1,7 +1,8 @@
 from emergency.scenario import EmergencyScenario
-from evacuation.person import create_people
+from evacuation.person import create_random_people
 from evacuation.grid import Grid
 from evacuation.manager import EvacuationManager
+from evacuation.exits import EXIT_POSITIONS
 
 
 def main():
@@ -12,14 +13,6 @@ def main():
         blocked_exit="norte"
     )
 
-    people = create_people([
-        (0, 0),
-        (1, 0),
-        (0, 1),
-        (4, 0),
-        (4, 1)
-    ])
-
     grid = Grid(5, 5)
 
     grid.set_obstacle(2, 0)
@@ -28,8 +21,23 @@ def main():
 
     grid.set_danger(1, 2)
 
-    grid.set_exit(0, 4)
-    grid.set_exit(4, 4)
+    grid.set_exit(*EXIT_POSITIONS["norte"])
+    grid.set_exit(*EXIT_POSITIONS["sur"])
+    grid.set_exit(*EXIT_POSITIONS["oeste"])
+    grid.set_exit(*EXIT_POSITIONS["este"])
+
+    if scenario.blocked_exit:
+        blocked_position = EXIT_POSITIONS.get(
+            scenario.blocked_exit
+        )
+
+        if blocked_position:
+            grid.block_exit(blocked_position)
+
+    people = create_random_people(
+        grid,
+        scenario.people
+    )
 
     evacuation = EvacuationManager(
         grid,

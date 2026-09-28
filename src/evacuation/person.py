@@ -1,3 +1,6 @@
+import random
+
+
 class Person:
     def __init__(self, person_id, position, target_exit=None):
         self.person_id = person_id
@@ -20,6 +23,7 @@ class Person:
             f"Evacuada: {self.evacuated}"
         )
 
+
 def create_people(positions):
     people = []
 
@@ -32,3 +36,23 @@ def create_people(positions):
         )
 
     return people
+
+
+def create_random_people(grid, amount):
+    available_positions = []
+
+    for y in range(grid.height):
+        for x in range(grid.width):
+            node = grid.get_node(x, y)
+
+            if node and node.node_type == "libre":
+                available_positions.append(node.position)
+
+    amount = min(amount, len(available_positions))
+
+    selected_positions = random.sample(
+        available_positions,
+        amount
+    )
+
+    return create_people(selected_positions)
