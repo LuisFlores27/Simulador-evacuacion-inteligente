@@ -1,7 +1,8 @@
 class Person:
-    def __init__(self, person_id, position):
+    def __init__(self, person_id, position, target_exit=None):
         self.person_id = person_id
         self.position = position
+        self.target_exit = target_exit
         self.route = []
         self.evacuated = False
 
@@ -15,5 +16,6 @@ class Person:
         return (
             f"Persona {self.person_id} | "
             f"Posición: {self.position} | "
+            f"Salida objetivo: {self.target_exit} | "
             f"Evacuada: {self.evacuated}"
         )
