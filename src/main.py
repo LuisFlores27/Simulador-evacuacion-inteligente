@@ -1,8 +1,18 @@
-import pygame
+from emergency.scenario import EmergencyScenario
 
-pygame.init()
 
-print("Pygame funcionando correctamente.")
-print(f"Versión de Pygame: {pygame.version.ver}")
+def main():
+    scenario = EmergencyScenario(
+        emergency_type="incendio",
+        zone="laboratorio",
+        people=30,
+        blocked_exit="norte"
+    )
 
-pygame.quit()
+    print("Simulador de Evacuación Inteligente")
+    print("-----------------------------------")
+    print(scenario)
+
+
+if __name__ == "__main__":
+    main()
