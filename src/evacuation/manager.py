@@ -19,15 +19,40 @@ class EvacuationManager:
             person.target_exit = best_exit
             person.set_route(route)
 
+    def move_people(self):
+        for person in self.people:
+            person.move_next()
+
+    def all_evacuated(self):
+        if not self.people:
+            return False
+
+        return all(
+            person.evacuated
+            for person in self.people
+        )
+
+    def get_evacuated_count(self):
+        return sum(
+            1
+            for person in self.people
+            if person.evacuated
+        )
+
     def get_evacuation_summary(self):
         total_people = len(self.people)
-        people_with_route = 0
 
-        for person in self.people:
-            if person.route:
-                people_with_route += 1
+        people_with_route = sum(
+            1
+            for person in self.people
+            if person.has_route()
+        )
+
+        people_evacuated = self.get_evacuated_count()
 
         return {
             "total_people": total_people,
-            "people_with_route": people_with_route
+            "people_with_route": people_with_route,
+            "people_evacuated": people_evacuated,
+            "all_evacuated": self.all_evacuated()
         }
