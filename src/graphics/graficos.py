@@ -1,310 +1,1209 @@
-"""
-Simulación visual
-"""
-import heapq
-import math
 import random
-import sys
-
+import math
 import pygame
 
-# Base gráfica y coordenadas
+from evacuation.grid import Grid
+from evacuation.manager import EvacuationManager
+from evacuation.person import create_people
+
+
+# ============================================================
+# CONFIGURACIÓN VISUAL
+# ============================================================
+
 TILE = 32
-COLS, ROWS = 30, 18
-PANEL = 64                      # franja inferior con leyenda y datos
-ANCHO, ALTO = COLS * TILE, ROWS * TILE + PANEL
+
+COLS = 30
+ROWS = 18
+
+PANEL = 64
+
+ANCHO = COLS * TILE
+ALTO = ROWS * TILE + PANEL
+
 FPS = 60
 
 
-def casilla_a_pixel(col, fila):
-    return col * TILE, fila * TILE
+# ============================================================
+# TIPOS DE CELDA
+# ============================================================
 
+PARED = 0
+PISO = 1
+PASILLO = 2
+PUERTA = 3
+SALIDA = 4
 
-def centro(col, fila):
-    return col * TILE + TILE // 2, fila * TILE + TILE // 2
-
-
-# Edificio
-PARED, PISO, PASILLO, PUERTA, SALIDA = "#", ".", ",", "D", "E"
-CAMINABLES = {PISO, PASILLO, PUERTA, SALIDA}
-
-COLORES = {
-    PARED: (60, 60, 70),
-    PISO: (225, 225, 215),
-    PASILLO: (190, 195, 205),
-    PUERTA: (150, 100, 50),
-    SALIDA: (60, 180, 90),
+CAMINABLES = {
+    PISO,
+    PASILLO,
+    PUERTA,
+    SALIDA
 }
 
+
+# ============================================================
+# HABITACIONES
+# ============================================================
+
 HABITACIONES = [
-    (1, 1, 6, 4, "Laboratorio"), (8, 1, 7, 4, "Aula 1"),
-    (16, 1, 7, 4, "Aula 2"), (24, 1, 5, 4, "Oficina"),
-    (1, 12, 6, 5, "Biblioteca"), (8, 12, 7, 5, "Aula 3"),
-    (16, 12, 7, 5, "Aula 4"), (24, 12, 5, 5, "Sala"),
+    (1, 1, 6, 4, "Laboratorio"),
+    (8, 1, 7, 4, "Aula 1"),
+    (16, 1, 7, 4, "Aula 2"),
+    (24, 1, 5, 4, "Oficina"),
+
+    (1, 12, 6, 5, "Biblioteca"),
+    (8, 12, 7, 5, "Aula 3"),
+    (16, 12, 7, 5, "Aula 4"),
+    (24, 12, 5, 5, "Sala"),
 ]
 
-# Salidas: casilla -> letra
-SALIDAS = {(0, 8): "A", (29, 8): "B", (15, 5): "C", (15, 11): "D"}
 
-# ESCENARIO
-SALIDAS_BLOQUEADAS = {(29, 8), (15, 5)}
-ZONA_FUEGO = {(c, f) for c in range(26, 29) for f in range(7, 10)}
+# ============================================================
+# SALIDAS
+# ============================================================
 
-COLOR_SALIDA = {"A": (30, 120, 230), "B": (120, 120, 120),
-                "C": (120, 120, 120), "D": (170, 60, 200)}
+SALIDAS = {
+    (0, 8): "A",
+    (29, 8): "B",
+    (15, 5): "C",
+    (15, 11): "D"
+}
 
+
+# ============================================================
+# ESCENARIO VISUAL
+# ============================================================
+
+SALIDAS_BLOQUEADAS = {
+    (29, 8),
+    (15, 5)
+}
+
+
+ZONA_FUEGO = {
+    (c, f)
+    for c in range(26, 29)
+    for f in range(7, 10)
+}
+
+
+# Colores de rutas según la salida
+COLOR_SALIDA = {
+    "A": (30, 120, 230),
+    "B": (120, 120, 120),
+    "C": (120, 120, 120),
+    "D": (170, 60, 200)
+}
+
+
+# ============================================================
+# EDIFICIO
+# ============================================================
 
 class Edificio:
-    def __init__(self):
-        self.grid = [[PARED] * COLS for _ in range(ROWS)]
-        for (c, f, w, h, _) in HABITACIONES:
-            for j in range(f, f + h):
-                for i in range(c, c + w):
-                    self.grid[j][i] = PISO
-        for j in range(6, 11):
-            for i in range(1, COLS - 1):
-                self.grid[j][i] = PASILLO
-        for (c, f, w, h, _) in HABITACIONES:
-            fila_puerta = 5 if f < 6 else 11
-            self.grid[fila_puerta][c + w // 2] = PUERTA
-        for (c, f) in SALIDAS:
-            self.grid[f][c] = SALIDA
-        self.bloqueadas = set(SALIDAS_BLOQUEADAS)
-        self.fuego = set(ZONA_FUEGO)
-        self.fuente = pygame.font.SysFont("arial", 14, bold=True)
 
-    def caminable(self, col, fila):
-        return (0 <= col < COLS and 0 <= fila < ROWS
-                and self.grid[fila][col] in CAMINABLES
-                and (col, fila) not in self.bloqueadas
-                and (col, fila) not in self.fuego)
+    def __init__(self):
+
+        self.mapa = [
+            [PARED for _ in range(COLS)]
+            for _ in range(ROWS)
+        ]
+
+        self.nombres_habitaciones = []
+
+        self.fuente = pygame.font.SysFont(
+            "arial",
+            14,
+            bold=True
+        )
+
+        self.construir_edificio()
+
+    def construir_edificio(self):
+
+        # ----------------------------------------------------
+        # Habitaciones
+        # ----------------------------------------------------
+
+        for x, y, ancho, alto, nombre in HABITACIONES:
+
+            self.nombres_habitaciones.append(
+                (x, y, ancho, alto, nombre)
+            )
+
+            for fila in range(y, y + alto):
+                for columna in range(x, x + ancho):
+
+                    if (
+                        0 <= fila < ROWS
+                        and 0 <= columna < COLS
+                    ):
+                        self.mapa[fila][columna] = PISO
+
+        # ----------------------------------------------------
+        # Pasillo central
+        # ----------------------------------------------------
+
+        for y in range(6, 11):
+            for x in range(1, COLS - 1):
+                self.mapa[y][x] = PASILLO
+
+        # ----------------------------------------------------
+        # Puertas
+        # ----------------------------------------------------
+
+        for x, y, ancho, alto, nombre in HABITACIONES:
+
+            fila_puerta = 5 if y < 6 else 11
+
+            puerta_x = x + ancho // 2
+
+            if (
+                0 <= puerta_x < COLS
+                and 0 <= fila_puerta < ROWS
+            ):
+                self.mapa[fila_puerta][puerta_x] = PUERTA
+
+        # ----------------------------------------------------
+        # Salidas
+        # ----------------------------------------------------
+
+        for posicion in SALIDAS:
+
+            x, y = posicion
+
+            self.mapa[y][x] = SALIDA
+
+        # ----------------------------------------------------
+        # Salidas bloqueadas
+        # ----------------------------------------------------
+
+        self.bloqueadas = set(
+            SALIDAS_BLOQUEADAS
+        )
+
+        # ----------------------------------------------------
+        # Zona de fuego
+        # ----------------------------------------------------
+
+        self.fuego = set(
+            ZONA_FUEGO
+        )
+
+    def es_caminable(self, x, y):
+
+        if not (
+            0 <= x < COLS
+            and 0 <= y < ROWS
+        ):
+            return False
+
+        if (x, y) in self.bloqueadas:
+            return False
+
+        if (x, y) in self.fuego:
+            return False
+
+        return self.mapa[y][x] in CAMINABLES
 
     def salidas_abiertas(self):
-        return [s for s in SALIDAS if s not in self.bloqueadas]
 
-    def dibujar(self, pantalla, t):
-        for fila in range(ROWS):
-            for col in range(COLS):
-                x, y = casilla_a_pixel(col, fila)
-                rect = pygame.Rect(x, y, TILE, TILE)
-                pygame.draw.rect(pantalla, COLORES[self.grid[fila][col]], rect)
-                if self.grid[fila][col] != PARED:
-                    pygame.draw.rect(pantalla, (170, 170, 175), rect, 1)
-        # Fuego (parpadea)
-        for (c, f) in self.fuego:
-            x, y = casilla_a_pixel(c, f)
-            v = math.sin(t * 8 + c * 1.7 + f * 2.3)
-            color = (235, int(110 + 50 * v), 20)
-            pygame.draw.rect(pantalla, color, (x, y, TILE, TILE))
-        # Salidas
-        for (c, f), letra in SALIDAS.items():
-            x, y = casilla_a_pixel(c, f)
-            bloq = (c, f) in self.bloqueadas
-            pygame.draw.rect(pantalla, (200, 40, 40) if bloq else (60, 180, 90),
-                             (x, y, TILE, TILE))
-            if bloq:
-                pygame.draw.line(pantalla, (255, 255, 255), (x + 6, y + 6),
-                                 (x + TILE - 6, y + TILE - 6), 4)
-                pygame.draw.line(pantalla, (255, 255, 255), (x + TILE - 6, y + 6),
-                                 (x + 6, y + TILE - 6), 4)
+        return [
+            salida
+            for salida in SALIDAS
+            if salida not in self.bloqueadas
+        ]
+
+    def casilla_a_pixel(self, posicion):
+
+        x, y = posicion
+
+        return (
+            x * TILE + TILE // 2,
+            y * TILE + TILE // 2
+        )
+
+    def dibujar(self, pantalla, tiempo):
+
+        # ----------------------------------------------------
+        # Mapa base
+        # ----------------------------------------------------
+
+        colores = {
+            PARED: (60, 60, 70),
+            PISO: (225, 225, 215),
+            PASILLO: (190, 195, 205),
+            PUERTA: (150, 100, 50),
+            SALIDA: (60, 180, 90)
+        }
+
+        for y in range(ROWS):
+            for x in range(COLS):
+
+                rect = pygame.Rect(
+                    x * TILE,
+                    y * TILE,
+                    TILE,
+                    TILE
+                )
+
+                pygame.draw.rect(
+                    pantalla,
+                    colores[self.mapa[y][x]],
+                    rect
+                )
+
+                if self.mapa[y][x] != PARED:
+
+                    pygame.draw.rect(
+                        pantalla,
+                        (170, 170, 175),
+                        rect,
+                        1
+                    )
+
+        # ----------------------------------------------------
+        # FUEGO ANIMADO
+        # ----------------------------------------------------
+
+        for x, y in self.fuego:
+
+            px = x * TILE
+            py = y * TILE
+
+            # El valor cambia continuamente para producir
+            # el efecto de parpadeo.
+            variacion = math.sin(
+                tiempo * 8
+                + x * 1.7
+                + y * 2.3
+            )
+
+            rojo = 235
+            verde = int(
+                110 + 50 * variacion
+            )
+
+            color_fuego = (
+                rojo,
+                verde,
+                20
+            )
+
+            pygame.draw.rect(
+                pantalla,
+                color_fuego,
+                (
+                    px,
+                    py,
+                    TILE,
+                    TILE
+                )
+            )
+
+            # Llama interior
+            radio = int(
+                6 + 2 * math.sin(
+                    tiempo * 10
+                    + x
+                )
+            )
+
+            pygame.draw.circle(
+                pantalla,
+                (255, 180, 30),
+                (
+                    px + TILE // 2,
+                    py + TILE // 2
+                ),
+                radio
+            )
+
+        # ----------------------------------------------------
+        # SALIDAS
+        # ----------------------------------------------------
+
+        for posicion, letra in SALIDAS.items():
+
+            x, y = posicion
+
+            px = x * TILE
+            py = y * TILE
+
+            bloqueada = (
+                posicion in self.bloqueadas
+            )
+
+            if bloqueada:
+
+                pygame.draw.rect(
+                    pantalla,
+                    (200, 40, 40),
+                    (
+                        px,
+                        py,
+                        TILE,
+                        TILE
+                    )
+                )
+
+                pygame.draw.line(
+                    pantalla,
+                    (255, 255, 255),
+                    (
+                        px + 6,
+                        py + 6
+                    ),
+                    (
+                        px + TILE - 6,
+                        py + TILE - 6
+                    ),
+                    4
+                )
+
+                pygame.draw.line(
+                    pantalla,
+                    (255, 255, 255),
+                    (
+                        px + TILE - 6,
+                        py + 6
+                    ),
+                    (
+                        px + 6,
+                        py + TILE - 6
+                    ),
+                    4
+                )
+
             else:
-                txt = self.fuente.render(letra, True, (255, 255, 255))
-                pantalla.blit(txt, (x + 11, y + 7))
-        # Nombres de habitaciones
-        for (c, f, w, h, nombre) in HABITACIONES:
-            txt = self.fuente.render(nombre, True, (80, 80, 90))
-            pantalla.blit(txt, (c * TILE + 6, f * TILE + 4))
+
+                pygame.draw.rect(
+                    pantalla,
+                    (60, 180, 90),
+                    (
+                        px,
+                        py,
+                        TILE,
+                        TILE
+                    )
+                )
+
+        # ----------------------------------------------------
+        # NOMBRES DE HABITACIONES
+        # ----------------------------------------------------
+
+        for (
+            x,
+            y,
+            ancho,
+            alto,
+            nombre
+        ) in self.nombres_habitaciones:
+
+            texto = self.fuente.render(
+                nombre,
+                True,
+                (80, 80, 90)
+            )
+
+            pantalla.blit(
+                texto,
+                (
+                    x * TILE + 6,
+                    y * TILE + 4
+                )
+            )
+
+    def dibujar_nombres_salidas(self, pantalla):
+
+        # Se dibujan DESPUÉS de las personas para garantizar
+        # que ninguna persona tape la letra de la salida.
+
+        for posicion, letra in SALIDAS.items():
+
+            x, y = posicion
+
+            px = x * TILE
+            py = y * TILE
+
+            if posicion in self.bloqueadas:
+                color = (255, 255, 255)
+            else:
+                color = (255, 255, 255, 255)
+
+            texto = self.fuente.render(
+                letra,
+                True,
+                color
+            )
+
+            rect = texto.get_rect(
+                center=(
+                    px + TILE // 2,
+                    py + TILE // 2
+                )
+            )
+
+            pantalla.blit(
+                texto,
+                rect
+            )
+
+    def crear_logical_grid(self):
+
+        grid = Grid(
+            width=COLS,
+            height=ROWS
+        )
+
+        # ----------------------------------------------------
+        # Mapa visual → mapa lógico
+        # ----------------------------------------------------
+
+        for y in range(ROWS):
+            for x in range(COLS):
+
+                tipo = self.mapa[y][x]
+
+                if tipo == PARED:
+
+                    grid.set_obstacle(
+                        x,
+                        y
+                    )
+
+                elif tipo == SALIDA:
+
+                    grid.set_exit(
+                        x,
+                        y
+                    )
+
+                else:
+
+                    grid.set_node_type(
+                        x,
+                        y,
+                        "libre"
+                    )
+
+        # ----------------------------------------------------
+        # Zonas peligrosas
+        # ----------------------------------------------------
+
+        for x, y in self.fuego:
+
+            if (
+                0 <= x < COLS
+                and 0 <= y < ROWS
+            ):
+
+                if (
+                    x,
+                    y
+                ) not in self.bloqueadas:
+
+                    grid.set_danger(
+                        x,
+                        y
+                    )
+
+        # ----------------------------------------------------
+        # Bloquear salidas
+        # ----------------------------------------------------
+
+        for posicion in self.bloqueadas:
+
+            grid.block_exit(
+                posicion
+            )
+
+        return grid
 
 
-# Rutas (A* temporal)
-def a_estrella(edificio, inicio, meta):
-    def h(p):
-        return abs(p[0] - meta[0]) + abs(p[1] - meta[1])
+# ============================================================
+# PERSONA VISUAL
+# ============================================================
 
-    cola = [(h(inicio), 0, inicio)]
-    previo = {inicio: None}
-    costo = {inicio: 0}
-    while cola:
-        _, g, act = heapq.heappop(cola)
-        if act == meta:
-            ruta = []
-            while act is not None:
-                ruta.append(act)
-                act = previo[act]
-            return ruta[::-1]
-        for dc, df in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            sig = (act[0] + dc, act[1] + df)
-            if not edificio.caminable(*sig):
-                continue
-            ng = g + 1
-            if ng < costo.get(sig, 10 ** 9):
-                costo[sig] = ng
-                previo[sig] = act
-                heapq.heappush(cola, (ng + h(sig), ng, sig))
-    return None
+class PersonaVisual:
 
+    def __init__(
+        self,
+        persona,
+        edificio,
+        tiempo_inicio
+    ):
 
-def mejor_ruta(edificio, inicio):
-    """Devuelve (ruta, salida) hacia la salida abierta más corta."""
-    mejor, meta = None, None
-    for s in edificio.salidas_abiertas():
-        r = a_estrella(edificio, inicio, s)
-        if r and (mejor is None or len(r) < len(mejor)):
-            mejor, meta = r, s
-    return mejor, meta
+        self.persona = persona
+        self.edificio = edificio
 
-class Persona:
-    def __init__(self, col, fila, edificio):
-        self.col, self.fila = col, fila
-        self.x, self.y = casilla_a_pixel(col, fila)
-        ruta, self.salida = mejor_ruta(edificio, (col, fila))
-        self.ruta = ruta[1:] if ruta else []
+        self.x, self.y = (
+            edificio.casilla_a_pixel(
+                persona.position
+            )
+        )
+
         self.destino = None
+
         self.velocidad = 75
-        self.retraso = random.uniform(0, 3)   # tiempo de reacción
-        self.fase = random.random() * 6.28
-        self.evacuado = False
-        self.tiempo_salida = None
-        letra = SALIDAS.get(self.salida)
-        self.color = COLOR_SALIDA[letra] if letra else (90, 90, 90)
+
+        self.reaccion = random.uniform(
+            0,
+            3
+        )
+
+        self.tiempo_inicio = (
+            tiempo_inicio
+        )
+
+        # Fase para animar las piernas
+        self.fase = random.random() * math.tau
+
+        self.tiempo_evacuacion = None
+
+        # Color según salida
+        salida = persona.target_exit
+
+        letra = (
+            SALIDAS.get(salida)
+            if salida is not None
+            else None
+        )
+
+        self.color = (
+            COLOR_SALIDA.get(
+                letra,
+                (90, 90, 90)
+            )
+        )
 
     @property
     def moviendo(self):
+
         return self.destino is not None
 
-    def actualizar(self, dt, t):
-        if self.evacuado:
+    def actualizar(
+        self,
+        dt,
+        tiempo_actual
+    ):
+
+        if self.persona.evacuated:
             return
-        if self.retraso > 0:
-            self.retraso -= dt
+
+        # ----------------------------------------------------
+        # Tiempo de reacción
+        # ----------------------------------------------------
+
+        if (
+            tiempo_actual
+            - self.tiempo_inicio
+            < self.reaccion
+        ):
             return
+
+        # ----------------------------------------------------
+        # Sin ruta
+        # ----------------------------------------------------
+
+        if not self.persona.route:
+            return
+
+        # ----------------------------------------------------
+        # Siguiente posición
+        # ----------------------------------------------------
+
+        siguiente_indice = (
+            self.persona.route_index + 1
+        )
+
+        if (
+            siguiente_indice
+            >= len(self.persona.route)
+        ):
+
+            if (
+                self.persona.position
+                == self.persona.target_exit
+            ):
+
+                self.persona.evacuate()
+
+                if self.tiempo_evacuacion is None:
+
+                    self.tiempo_evacuacion = (
+                        tiempo_actual
+                    )
+
+            return
+
+        siguiente = self.persona.route[
+            siguiente_indice
+        ]
+
+        destino_x, destino_y = (
+            self.edificio.casilla_a_pixel(
+                siguiente
+            )
+        )
+
         if self.destino is None:
-            if not self.ruta:
-                return
-            self.destino = self.ruta.pop(0)
-        tx, ty = casilla_a_pixel(*self.destino)
-        dx, dy = tx - self.x, ty - self.y
-        dist = math.hypot(dx, dy)
-        paso = self.velocidad * dt
-        if dist <= paso:
-            self.x, self.y = tx, ty
-            self.col, self.fila = self.destino
+
+            self.destino = (
+                destino_x,
+                destino_y
+            )
+
+        dx = self.destino[0] - self.x
+        dy = self.destino[1] - self.y
+
+        distancia = math.hypot(
+            dx,
+            dy
+        )
+
+        desplazamiento = (
+            self.velocidad * dt
+        )
+
+        if distancia <= desplazamiento:
+
+            self.x = self.destino[0]
+            self.y = self.destino[1]
+
+            self.persona.move_next()
+
             self.destino = None
-            if (self.col, self.fila) == self.salida:
-                self.evacuado = True
-                self.tiempo_salida = t
+
+            if self.persona.evacuated:
+
+                if (
+                    self.tiempo_evacuacion
+                    is None
+                ):
+
+                    self.tiempo_evacuacion = (
+                        tiempo_actual
+                    )
+
         else:
-            self.x += dx / dist * paso
-            self.y += dy / dist * paso
+
+            self.x += (
+                dx / distancia
+            ) * desplazamiento
+
+            self.y += (
+                dy / distancia
+            ) * desplazamiento
+
+            # Animación de caminar
             self.fase += dt * 14
 
     def puntos_ruta(self):
-        pts = [(int(self.x + TILE / 2), int(self.y + TILE / 2))]
-        if self.destino:
-            pts.append(centro(*self.destino))
-        pts += [centro(c, f) for (c, f) in self.ruta]
-        return pts
+
+        if not self.persona.route:
+            return []
+
+        puntos = []
+
+        inicio = (
+            self.persona.route_index
+        )
+
+        for posicion in (
+            self.persona.route[inicio:]
+        ):
+
+            puntos.append(
+                self.edificio.casilla_a_pixel(
+                    posicion
+                )
+            )
+
+        return puntos
 
     def dibujar(self, pantalla):
-        if self.evacuado:
+
+        # ----------------------------------------------------
+        # No dibujar a la persona una vez evacuada
+        # ----------------------------------------------------
+
+        if self.persona.evacuated:
             return
-        cx = int(self.x + TILE / 2)
-        base = int(self.y + TILE - 3)
-        b = math.sin(self.fase) * 5 if self.moviendo else 0
-        r = abs(math.sin(self.fase)) * 2 if self.moviendo else 0
-        pygame.draw.line(pantalla, (40, 40, 50), (cx - 3, base - 8 - r),
-                         (cx - 3 + b, base), 3)
-        pygame.draw.line(pantalla, (40, 40, 50), (cx + 3, base - 8 - r),
-                         (cx + 3 - b, base), 3)
-        pygame.draw.rect(pantalla, self.color, (cx - 5, base - 21 - r, 10, 13),
-                         border_radius=3)
-        pygame.draw.circle(pantalla, (240, 205, 170), (cx, int(base - 26 - r)), 6)
+
+        # ----------------------------------------------------
+        # Ruta
+        # ----------------------------------------------------
+
+        puntos = self.puntos_ruta()
+
+        if len(puntos) >= 2:
+
+            pygame.draw.lines(
+                pantalla,
+                self.color,
+                False,
+                puntos,
+                2
+            )
+
+        # ----------------------------------------------------
+        # Posición
+        # ----------------------------------------------------
+
+        centro_x = int(self.x)
+        centro_y = int(self.y)
+
+        # ----------------------------------------------------
+        # Animación de piernas
+        # ----------------------------------------------------
+
+        if self.moviendo:
+
+            movimiento_piernas = (
+                math.sin(self.fase) * 5
+            )
+
+            elevacion = (
+                abs(
+                    math.sin(self.fase)
+                ) * 2
+            )
+
+        else:
+
+            movimiento_piernas = 0
+            elevacion = 0
+
+        # ----------------------------------------------------
+        # Pierna izquierda
+        # ----------------------------------------------------
+
+        pygame.draw.line(
+            pantalla,
+            (40, 40, 50),
+            (
+                centro_x - 3,
+                centro_y + 6 - elevacion
+            ),
+            (
+                centro_x - 3
+                + movimiento_piernas,
+                centro_y + 16
+            ),
+            3
+        )
+
+        # ----------------------------------------------------
+        # Pierna derecha
+        # ----------------------------------------------------
+
+        pygame.draw.line(
+            pantalla,
+            (40, 40, 50),
+            (
+                centro_x + 3,
+                centro_y + 6 - elevacion
+            ),
+            (
+                centro_x + 3
+                - movimiento_piernas,
+                centro_y + 16
+            ),
+            3
+        )
+
+        # ----------------------------------------------------
+        # Cuerpo
+        # ----------------------------------------------------
+
+        pygame.draw.rect(
+            pantalla,
+            self.color,
+            (
+                centro_x - 5,
+                centro_y - 8 - int(elevacion),
+                10,
+                13
+            ),
+            border_radius=3
+        )
+
+        # ----------------------------------------------------
+        # Cabeza
+        # ----------------------------------------------------
+
+        pygame.draw.circle(
+            pantalla,
+            (240, 205, 170),
+            (
+                centro_x,
+                centro_y - 14 - int(elevacion)
+            ),
+            6
+        )
 
 
-# Simulación y panel
+# ============================================================
+# SIMULACIÓN
+# ============================================================
+
 class Simulacion:
+
     def __init__(self):
+
+        self.reiniciar()
+
+    def reiniciar(self):
+
+        # ----------------------------------------------------
+        # Edificio
+        # ----------------------------------------------------
+
         self.edificio = Edificio()
-        self.personas = []
-        for (c, f, w, h, _) in HABITACIONES:
-            celdas = [(i, j) for j in range(f, f + h) for i in range(c, c + w)
-                      if self.edificio.caminable(i, j)]
-            for (i, j) in random.sample(celdas, 3):
-                self.personas.append(Persona(i, j, self.edificio))
-        self.tiempo = 0.0
-        self.fin = None
-        self.capa = pygame.Surface((COLS * TILE, ROWS * TILE), pygame.SRCALPHA)
-        self.fuente = pygame.font.SysFont("arial", 15, bold=True)
+
+        # ----------------------------------------------------
+        # Grid lógico
+        # ----------------------------------------------------
+
+        self.grid = (
+            self.edificio.crear_logical_grid()
+        )
+
+        # ----------------------------------------------------
+        # Personas
+        # ----------------------------------------------------
+
+        posiciones = []
+
+        for (
+            x,
+            y,
+            ancho,
+            alto,
+            nombre
+        ) in HABITACIONES:
+
+            posiciones_habitacion = []
+
+            for fila in range(
+                y,
+                y + alto
+            ):
+
+                for columna in range(
+                    x,
+                    x + ancho
+                ):
+
+                    if self.edificio.es_caminable(
+                        columna,
+                        fila
+                    ):
+
+                        posiciones_habitacion.append(
+                            (
+                                columna,
+                                fila
+                            )
+                        )
+
+            cantidad = min(
+                3,
+                len(posiciones_habitacion)
+            )
+
+            if cantidad > 0:
+
+                seleccionadas = random.sample(
+                    posiciones_habitacion,
+                    cantidad
+                )
+
+                posiciones.extend(
+                    seleccionadas
+                )
+
+        # ----------------------------------------------------
+        # Personas lógicas
+        # ----------------------------------------------------
+
+        self.people = create_people(
+            posiciones
+        )
+
+        # ----------------------------------------------------
+        # Gestor de evacuación
+        # ----------------------------------------------------
+
+        self.manager = EvacuationManager(
+            self.grid,
+            self.people
+        )
+
+        # ----------------------------------------------------
+        # Calcular rutas
+        # ----------------------------------------------------
+
+        self.manager.calculate_routes()
+
+        # ----------------------------------------------------
+        # Personas visuales
+        # ----------------------------------------------------
+
+        self.personas_visuales = []
+
+        for persona in self.people:
+
+            self.personas_visuales.append(
+                PersonaVisual(
+                    persona,
+                    self.edificio,
+                    0
+                )
+            )
+
+        # ----------------------------------------------------
+        # Tiempo
+        # ----------------------------------------------------
+
+        self.tiempo = 0
+
+        self.terminada = False
+
+        self.tiempo_final = None
+
+        # ----------------------------------------------------
+        # Panel
+        # ----------------------------------------------------
+
+        self.fuente = pygame.font.SysFont(
+            "arial",
+            14,
+            bold=True
+        )
 
     def actualizar(self, dt):
-        if self.fin is None:
-            self.tiempo += dt
-        for p in self.personas:
-            p.actualizar(dt, self.tiempo)
-        con_ruta = [p for p in self.personas if p.salida]
-        if self.fin is None and all(p.evacuado for p in con_ruta):
-            self.fin = self.tiempo
+
+        if self.terminada:
+            return
+
+        self.tiempo += dt
+
+        for persona_visual in (
+            self.personas_visuales
+        ):
+
+            persona_visual.actualizar(
+                dt,
+                self.tiempo
+            )
+
+        # ----------------------------------------------------
+        # Comprobar evacuación completa
+        # ----------------------------------------------------
+
+        if self.manager.all_evacuated():
+
+            self.terminada = True
+
+            self.tiempo_final = (
+                self.tiempo
+            )
 
     def dibujar(self, pantalla):
-        self.edificio.dibujar(pantalla, self.tiempo)
-        # Rutas de evacuación (semitransparentes)
-        self.capa.fill((0, 0, 0, 0))
-        for p in self.personas:
-            if p.evacuado or not p.salida:
+
+        # ----------------------------------------------------
+        # Fondo
+        # ----------------------------------------------------
+
+        pantalla.fill(
+            (20, 20, 25)
+        )
+
+        # ----------------------------------------------------
+        # Edificio
+        # ----------------------------------------------------
+
+        self.edificio.dibujar(
+            pantalla,
+            self.tiempo
+        )
+
+        # ----------------------------------------------------
+        # Rutas
+        # ----------------------------------------------------
+
+        for persona_visual in (
+            self.personas_visuales
+        ):
+
+            if persona_visual.persona.evacuated:
                 continue
-            pts = p.puntos_ruta()
-            if len(pts) > 1:
-                pygame.draw.lines(self.capa, p.color + (150,), False, pts, 3)
-        pantalla.blit(self.capa, (0, 0))
-        for p in self.personas:
-            p.dibujar(pantalla)
-        self.dibujar_panel(pantalla)
+
+            puntos = (
+                persona_visual.puntos_ruta()
+            )
+
+            if len(puntos) > 1:
+
+                pygame.draw.lines(
+                    pantalla,
+                    persona_visual.color,
+                    False,
+                    puntos,
+                    2
+                )
+
+        # ----------------------------------------------------
+        # Personas
+        # ----------------------------------------------------
+
+        for persona_visual in (
+            self.personas_visuales
+        ):
+
+            persona_visual.dibujar(
+                pantalla
+            )
+
+        # ----------------------------------------------------
+        # Dibujar letras de salidas
+        # ENCIMA de las personas
+        # ----------------------------------------------------
+
+        self.edificio.dibujar_nombres_salidas(
+            pantalla
+        )
+
+        # ----------------------------------------------------
+        # Panel
+        # ----------------------------------------------------
+
+        self.dibujar_panel(
+            pantalla
+        )
 
     def dibujar_panel(self, pantalla):
+
         y0 = ROWS * TILE
-        pygame.draw.rect(pantalla, (28, 30, 38), (0, y0, ANCHO, PANEL))
-        # Leyenda
-        items = [((60, 180, 90), "Salida abierta"), ((200, 40, 40), "Salida bloqueada"),
-                 ((235, 130, 20), "Fuego"), (COLOR_SALIDA["A"], "Ruta a A"),
-                 (COLOR_SALIDA["D"], "Ruta a D")]
-        x = 12
-        for color, texto in items:
-            pygame.draw.rect(pantalla, color, (x, y0 + 10, 14, 14))
-            t = self.fuente.render(texto, True, (230, 230, 235))
-            pantalla.blit(t, (x + 20, y0 + 8))
-            x += 20 + t.get_width() + 22
+
+        pygame.draw.rect(
+            pantalla,
+            (28, 30, 38),
+            (
+                0,
+                y0,
+                ANCHO,
+                PANEL
+            )
+        )
+
+        # ----------------------------------------------------
         # Datos
-        total = len([p for p in self.personas if p.salida])
-        listos = len([p for p in self.personas if p.evacuado])
-        abiertas = ", ".join(SALIDAS[s] for s in self.edificio.salidas_abiertas())
-        cerradas = ", ".join(SALIDAS[s] for s in sorted(self.edificio.bloqueadas, key=SALIDAS.get))
-        linea = (f"Evacuados: {listos}/{total}    Tiempo: {self.tiempo:4.1f} s    "
-                 f"Abiertas: {abiertas}    Bloqueadas: {cerradas}")
-        if self.fin is not None:
-            linea += f"    EVACUACIÓN COMPLETA en {self.fin:.1f} s  (R = reiniciar)"
-        pantalla.blit(self.fuente.render(linea, True, (255, 255, 255)), (12, y0 + 36))
+        # ----------------------------------------------------
 
+        resumen = (
+            self.manager
+            .get_evacuation_summary()
+        )
 
-def main():
-    pygame.init()
-    pantalla = pygame.display.set_mode((ANCHO, ALTO))
-    pygame.display.set_caption("Simulador de evacuación inteligente")
-    reloj = pygame.time.Clock()
-    sim = Simulacion()
+        evacuadas = (
+            resumen["people_evacuated"]
+        )
 
-    while True:
-        dt = min(reloj.tick(FPS) / 1000, 0.05)
-        for e in pygame.event.get():
-            if e.type == pygame.QUIT or (e.type == pygame.KEYDOWN
-                                         and e.key == pygame.K_ESCAPE):
-                pygame.quit()
-                sys.exit()
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_r:
-                sim = Simulacion()
-        sim.actualizar(dt)
-        sim.dibujar(pantalla)
-        pygame.display.flip()
+        total = (
+            resumen["total_people"]
+        )
 
+        abiertas = ", ".join(
+            SALIDAS[posicion]
+            for posicion
+            in self.edificio.salidas_abiertas()
+        )
 
-if __name__ == "__main__":
-    main()
+        bloqueadas = ", ".join(
+            SALIDAS[posicion]
+            for posicion
+            in sorted(
+                self.edificio.bloqueadas
+            )
+        )
+
+        # ----------------------------------------------------
+        # Primera línea
+        # ----------------------------------------------------
+
+        linea1 = (
+            f"Evacuados: "
+            f"{evacuadas}/{total}"
+            f"    "
+            f"Tiempo: "
+            f"{self.tiempo:4.1f} s"
+            f"    "
+            f"Abiertas: {abiertas}"
+            f"    "
+            f"Bloqueadas: {bloqueadas}"
+        )
+
+        texto1 = self.fuente.render(
+            linea1,
+            True,
+            (255, 255, 255)
+        )
+
+        pantalla.blit(
+            texto1,
+            (
+                12,
+                y0 + 8
+            )
+        )
+
+        # ----------------------------------------------------
+        # Segunda línea
+        # ----------------------------------------------------
+
+        if self.terminada:
+
+            linea2 = (
+                f"EVACUACIÓN COMPLETA "
+                f"en {self.tiempo_final:.1f} s"
+                f"    "
+                f"R = reiniciar"
+            )
+
+            color2 = (
+                100,
+                230,
+                120
+            )
+
+        else:
+
+            linea2 = (
+                "ESC = salir"
+                f"    "
+                "R = reiniciar"
+            )
+
+            color2 = (
+                230,
+                230,
+                235
+            )
+
+        texto2 = self.fuente.render(
+            linea2,
+            True,
+            color2
+        )
+
+        pantalla.blit(
+            texto2,
+            (
+                12,
+                y0 + 34
+            )
+        )

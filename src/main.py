@@ -1,84 +1,69 @@
-from emergency.scenario import EmergencyScenario
-from evacuation.person import create_random_people
-from evacuation.grid import Grid
-from evacuation.manager import EvacuationManager
-from evacuation.exits import EXIT_POSITIONS
+import pygame
+
+from graphics.graficos import (
+    Simulacion,
+    ANCHO,
+    ALTO,
+    FPS
+)
 
 
 def main():
-    scenario = EmergencyScenario(
-        emergency_type="incendio",
-        zone="laboratorio",
-        people=30,
-        blocked_exit="norte"
+
+    pygame.init()
+
+    pantalla = pygame.display.set_mode(
+        (ANCHO, ALTO)
     )
 
-    grid = Grid(5, 5)
+    pygame.display.set_caption(
+        "Simulador de Evacuación Inteligente"
+    )
 
-    grid.set_obstacle(2, 0)
-    grid.set_obstacle(2, 1)
-    grid.set_obstacle(2, 2)
+    reloj = pygame.time.Clock()
 
-    grid.set_danger(1, 2)
+    simulacion = Simulacion()
 
-    grid.set_exit(*EXIT_POSITIONS["norte"])
-    grid.set_exit(*EXIT_POSITIONS["sur"])
-    grid.set_exit(*EXIT_POSITIONS["oeste"])
-    grid.set_exit(*EXIT_POSITIONS["este"])
+    ejecutando = True
 
-    if scenario.blocked_exit:
-        blocked_position = EXIT_POSITIONS.get(
-            scenario.blocked_exit
+    while ejecutando:
+
+        dt = reloj.tick(FPS) / 1000.0
+
+        # ----------------------------------------------------
+        # Eventos
+        # ----------------------------------------------------
+
+        for evento in pygame.event.get():
+
+            if evento.type == pygame.QUIT:
+                ejecutando = False
+
+            elif evento.type == pygame.KEYDOWN:
+
+                if evento.key == pygame.K_ESCAPE:
+                    ejecutando = False
+
+                elif evento.key == pygame.K_r:
+                    simulacion.reiniciar()
+
+        # ----------------------------------------------------
+        # Actualizar simulación
+        # ----------------------------------------------------
+
+        simulacion.actualizar(dt)
+
+        # ----------------------------------------------------
+        # Dibujar
+        # ----------------------------------------------------
+
+        simulacion.dibujar(
+            pantalla
         )
 
-        if blocked_position:
-            grid.block_exit(blocked_position)
+        pygame.display.flip()
 
-    people = create_random_people(
-        grid,
-        scenario.people
-    )
-
-    evacuation = EvacuationManager(
-        grid,
-        people
-    )
-
-    evacuation.calculate_routes()
-
-    summary = evacuation.get_evacuation_summary()
-
-    print("Simulador de Evacuación Inteligente")
-    print("-----------------------------------")
-    print(scenario)
-    print()
-
-    print("Mapa:")
-    print(grid)
-    print()
-
-    print("Salidas disponibles:")
-    print(grid.get_exits())
-    print()
-
-    print("Personas:")
-    print()
-
-    for person in people:
-        print(person)
-        print("Ruta:", person.route)
-        print()
-
-    print("Resumen de evacuación:")
-    print(
-        f"Personas totales: "
-        f"{summary['total_people']}"
-    )
-
-    print(
-        f"Personas con ruta: "
-        f"{summary['people_with_route']}"
-    )
+    pygame.quit()
 
 
 if __name__ == "__main__":
