@@ -1,3 +1,5 @@
+from collections import Counter
+
 from evacuation.astar import AStar
 
 
@@ -39,6 +41,22 @@ class EvacuationManager:
             if person.evacuated
         )
 
+    def get_people_without_route(self):
+        return sum(
+            1
+            for person in self.people
+            if not person.has_route()
+        )
+
+    def get_exit_usage(self):
+        usage = Counter()
+
+        for person in self.people:
+            if person.target_exit is not None:
+                usage[person.target_exit] += 1
+
+        return dict(usage)
+
     def get_evacuation_summary(self):
         total_people = len(self.people)
 
@@ -53,6 +71,8 @@ class EvacuationManager:
         return {
             "total_people": total_people,
             "people_with_route": people_with_route,
+            "people_without_route": self.get_people_without_route(),
             "people_evacuated": people_evacuated,
-            "all_evacuated": self.all_evacuated()
+            "all_evacuated": self.all_evacuated(),
+            "exit_usage": self.get_exit_usage()
         }

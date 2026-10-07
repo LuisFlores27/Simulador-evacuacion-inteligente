@@ -1117,6 +1117,14 @@ class Simulacion:
             resumen["total_people"]
         )
 
+        sin_ruta = (
+            resumen["people_without_route"]
+        )
+
+        uso_salidas = (
+            resumen["exit_usage"]
+        )
+
         abiertas = ", ".join(
             SALIDAS[posicion]
             for posicion
@@ -1162,16 +1170,24 @@ class Simulacion:
         )
 
         # ----------------------------------------------------
-        # Segunda línea
+        # Segunda línea: uso de salidas
         # ----------------------------------------------------
 
-        if self.terminada:
+        linea2 = (
+            f"A: {uso_salidas.get((0, 8), 0)}"
+            f"    "
+            f"B: {uso_salidas.get((29, 8), 0)}"
+            f"    "
+            f"C: {uso_salidas.get((15, 5), 0)}"
+            f"    "
+            f"D: {uso_salidas.get((15, 11), 0)}"
+        )
 
-            linea2 = (
-                f"EVACUACIÓN COMPLETA "
-                f"en {self.tiempo_final:.1f} s"
-                f"    "
-                f"R = reiniciar"
+        if self.terminada:
+            linea2 += (
+                f"    |    EVACUACIÓN COMPLETA"
+                f" en {self.tiempo_final:.1f} s"
+                f"    |    R = reiniciar"
             )
 
             color2 = (
@@ -1181,11 +1197,9 @@ class Simulacion:
             )
 
         else:
-
-            linea2 = (
-                "ESC = salir"
-                f"    "
-                "R = reiniciar"
+            linea2 += (
+                f"    |    ESC = salir"
+                f"    R = reiniciar"
             )
 
             color2 = (
