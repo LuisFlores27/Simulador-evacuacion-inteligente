@@ -11,9 +11,10 @@ class Person:
         self.route_index = 0
 
         self.evacuated = False
+        self.used_exit = None
 
     def set_route(self, route):
-        self.route = route
+        self.route = list(route)
         self.route_index = 0
 
     def move_next(self):
@@ -33,9 +34,11 @@ class Person:
         self.position = self.route[self.route_index]
 
         if self.position == self.target_exit:
-            self.evacuated = True
+            self.evacuate()
 
     def evacuate(self):
+        if self.target_exit is not None and self.position == self.target_exit:
+            self.used_exit = self.target_exit
         self.evacuated = True
 
     def has_route(self):

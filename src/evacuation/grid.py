@@ -6,6 +6,8 @@ class Grid:
         self.width = width
         self.height = height
         self.nodes = []
+        self.exits = {}
+        self.blocked_exits = set()
 
         for y in range(height):
             row = []
@@ -30,35 +32,63 @@ class Grid:
     def set_obstacle(self, x, y):
         self.set_node_type(x, y, "obstaculo")
 
-    def set_danger(self, x, y):
-        self.set_node_type(x, y, "peligro")
-
     def set_exit(self, x, y):
         self.set_node_type(x, y, "salida")
+        self.exits[(x, y)] = None
+
+    def register_exit(self, position, identifier):
+        self.exits[position] = identifier
+        if position not in self.blocked_exits:
+            self.set_node_type(*position, "salida")
 
     def get_exits(self):
-        exits = []
-
-        for row in self.nodes:
-            for node in row:
-                if node.node_type == "salida":
-                    exits.append(node.position)
-
-        return exits
+        return [
+            position
+            for position in self.exits
+            if position not in self.blocked_exits
+        ]
 
     def block_exit(self, position):
-        self.set_node_type(
-            position[0],
-            position[1],
-            "obstaculo"
-        )
+        if position not in self.exits:
+            raise ValueError(f"No existe una salida en {position}.")
+        self.blocked_exits.add(position)
+        self.set_node_type(*position, "salida_bloqueada")
+
+    def unblock_exit(self, position):
+        if position not in self.exits:
+            raise ValueError(f"No existe una salida en {position}.")
+        self.blocked_exits.discard(position)
+        self.set_node_type(*position, "salida")
+
+    def get_exit_identifier(self, position):
+        return self.exits.get(position)
+
+    def set_danger(self, x, y):
+        node = self.get_node(x, y)
+        if node is not None and node.node_type not in {
+            "obstaculo",
+            "salida",
+            "salida_bloqueada",
+        }:
+            node.node_type = "peligro"
+
+    def set_fire(self, x, y):
+        node = self.get_node(x, y)
+        if node is not None and node.node_type not in {
+            "obstaculo",
+            "salida",
+            "salida_bloqueada",
+        }:
+            node.node_type = "incendio"
 
     def __str__(self):
         symbols = {
             "libre": ".",
             "obstaculo": "#",
             "peligro": "!",
-            "salida": "E"
+            "incendio": "F",
+            "salida": "E",
+            "salida_bloqueada": "X",
         }
 
         result = []
