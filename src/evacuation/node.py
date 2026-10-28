@@ -10,7 +10,7 @@ class Node:
 
     @property
     def walkable(self):
-        return self.node_type != "obstaculo"
+        return self.node_type not in {"obstaculo", "salida_bloqueada"}
 
     def __str__(self):
         return (

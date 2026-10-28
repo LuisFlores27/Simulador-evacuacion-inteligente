@@ -34,7 +34,7 @@ class AStar:
         return neighbors
 
     def get_movement_cost(self, node):
-        if node.node_type == "peligro":
+        if node.node_type in {"peligro", "incendio"}:
             return 5
 
         return 1

@@ -1,10 +1,13 @@
 import random
 import math
+from concurrent.futures import ThreadPoolExecutor
 import pygame
 
+from ai.client import GenerativeAIClient
+from emergency.application import apply_scenario
+from emergency.scenario import EmergencyScenario, EXIT_IDS, ZONE_CELLS
 from evacuation.grid import Grid
 from evacuation.manager import EvacuationManager
-from evacuation.person import create_people
 
 
 # ============================================================
@@ -16,7 +19,7 @@ TILE = 32
 COLS = 30
 ROWS = 18
 
-PANEL = 64
+PANEL = 88
 
 ANCHO = COLS * TILE
 ALTO = ROWS * TILE + PANEL
@@ -47,15 +50,17 @@ CAMINABLES = {
 # ============================================================
 
 HABITACIONES = [
-    (1, 1, 6, 4, "Laboratorio"),
-    (8, 1, 7, 4, "Aula 1"),
-    (16, 1, 7, 4, "Aula 2"),
-    (24, 1, 5, 4, "Oficina"),
-
-    (1, 12, 6, 5, "Biblioteca"),
-    (8, 12, 7, 5, "Aula 3"),
-    (16, 12, 7, 5, "Aula 4"),
-    (24, 12, 5, 5, "Sala"),
+    (*ZONE_CELLS[key], name)
+    for key, name in (
+        ("laboratorio", "Laboratorio"),
+        ("aula 1", "Aula 1"),
+        ("aula 2", "Aula 2"),
+        ("oficina", "Oficina"),
+        ("biblioteca", "Biblioteca"),
+        ("aula 3", "Aula 3"),
+        ("aula 4", "Aula 4"),
+        ("sala", "Sala"),
+    )
 ]
 
 
@@ -64,27 +69,8 @@ HABITACIONES = [
 # ============================================================
 
 SALIDAS = {
-    (0, 8): "A",
-    (29, 8): "B",
-    (15, 5): "C",
-    (15, 11): "D"
-}
-
-
-# ============================================================
-# ESCENARIO VISUAL
-# ============================================================
-
-SALIDAS_BLOQUEADAS = {
-    (29, 8),
-    (15, 5)
-}
-
-
-ZONA_FUEGO = {
-    (c, f)
-    for c in range(26, 29)
-    for f in range(7, 10)
+    position: identifier.upper()
+    for identifier, position in EXIT_IDS.items()
 }
 
 
@@ -111,6 +97,7 @@ class Edificio:
         ]
 
         self.nombres_habitaciones = []
+        self.grid = None
 
         self.fuente = pygame.font.SysFont(
             "arial",
@@ -145,9 +132,10 @@ class Edificio:
         # Pasillo central
         # ----------------------------------------------------
 
-        for y in range(6, 11):
-            for x in range(1, COLS - 1):
-                self.mapa[y][x] = PASILLO
+        x, y, width, height = ZONE_CELLS["pasillo central"]
+        for fila in range(y, y + height):
+            for columna in range(x, x + width):
+                self.mapa[fila][columna] = PASILLO
 
         # ----------------------------------------------------
         # Puertas
@@ -175,21 +163,31 @@ class Edificio:
 
             self.mapa[y][x] = SALIDA
 
-        # ----------------------------------------------------
-        # Salidas bloqueadas
-        # ----------------------------------------------------
+    @property
+    def bloqueadas(self):
+        return set(self.grid.blocked_exits) if self.grid else set()
 
-        self.bloqueadas = set(
-            SALIDAS_BLOQUEADAS
-        )
+    @property
+    def fuego(self):
+        if self.grid is None:
+            return set()
+        return {
+            node.position
+            for row in self.grid.nodes
+            for node in row
+            if node.node_type == "incendio"
+        }
 
-        # ----------------------------------------------------
-        # Zona de fuego
-        # ----------------------------------------------------
-
-        self.fuego = set(
-            ZONA_FUEGO
-        )
+    @property
+    def zonas_peligrosas(self):
+        if self.grid is None:
+            return set()
+        return {
+            node.position
+            for row in self.grid.nodes
+            for node in row
+            if node.node_type == "peligro"
+        }
 
     def es_caminable(self, x, y):
 
@@ -199,13 +197,10 @@ class Edificio:
         ):
             return False
 
-        if (x, y) in self.bloqueadas:
+        if self.mapa[y][x] not in CAMINABLES:
             return False
-
-        if (x, y) in self.fuego:
-            return False
-
-        return self.mapa[y][x] in CAMINABLES
+        node = self.grid.get_node(x, y) if self.grid else None
+        return node is None or node.walkable
 
     def salidas_abiertas(self):
 
@@ -266,6 +261,17 @@ class Edificio:
         # ----------------------------------------------------
         # FUEGO ANIMADO
         # ----------------------------------------------------
+
+        for x, y in self.zonas_peligrosas:
+            px = x * TILE
+            py = y * TILE
+            pygame.draw.rect(
+                pantalla,
+                (215, 165, 45),
+                (px, py, TILE, TILE)
+            )
+            texto = self.fuente.render("!", True, (45, 35, 20))
+            pantalla.blit(texto, texto.get_rect(center=(px + TILE // 2, py + TILE // 2)))
 
         for x, y in self.fuego:
 
@@ -475,9 +481,9 @@ class Edificio:
 
                 elif tipo == SALIDA:
 
-                    grid.set_exit(
-                        x,
-                        y
+                    grid.register_exit(
+                        (x, y),
+                        SALIDAS[(x, y)]
                     )
 
                 else:
@@ -487,37 +493,6 @@ class Edificio:
                         y,
                         "libre"
                     )
-
-        # ----------------------------------------------------
-        # Zonas peligrosas
-        # ----------------------------------------------------
-
-        for x, y in self.fuego:
-
-            if (
-                0 <= x < COLS
-                and 0 <= y < ROWS
-            ):
-
-                if (
-                    x,
-                    y
-                ) not in self.bloqueadas:
-
-                    grid.set_danger(
-                        x,
-                        y
-                    )
-
-        # ----------------------------------------------------
-        # Bloquear salidas
-        # ----------------------------------------------------
-
-        for posicion in self.bloqueadas:
-
-            grid.block_exit(
-                posicion
-            )
 
         return grid
 
@@ -852,144 +827,208 @@ class PersonaVisual:
 class Simulacion:
 
     def __init__(self):
-
-        self.reiniciar()
-
-    def reiniciar(self):
-
-        # ----------------------------------------------------
-        # Edificio
-        # ----------------------------------------------------
-
-        self.edificio = Edificio()
-
-        # ----------------------------------------------------
-        # Grid lógico
-        # ----------------------------------------------------
-
-        self.grid = (
-            self.edificio.crear_logical_grid()
+        self.ai_client = GenerativeAIClient()
+        self.ai_executor = ThreadPoolExecutor(max_workers=1)
+        self.ai_future = None
+        self.input_mode = False
+        self.instruccion = ""
+        self.estado_ia = (
+            "IA disponible"
+            if self.ai_client.is_configured
+            else "IA sin configurar; usa T para escribir o 1-4 para escenarios locales"
         )
-
-        # ----------------------------------------------------
-        # Personas
-        # ----------------------------------------------------
-
-        posiciones = []
-
-        for (
-            x,
-            y,
-            ancho,
-            alto,
-            nombre
-        ) in HABITACIONES:
-
-            posiciones_habitacion = []
-
-            for fila in range(
-                y,
-                y + alto
-            ):
-
-                for columna in range(
-                    x,
-                    x + ancho
-                ):
-
-                    if self.edificio.es_caminable(
-                        columna,
-                        fila
-                    ):
-
-                        posiciones_habitacion.append(
-                            (
-                                columna,
-                                fila
-                            )
-                        )
-
-            cantidad = min(
-                3,
-                len(posiciones_habitacion)
-            )
-
-            if cantidad > 0:
-
-                seleccionadas = random.sample(
-                    posiciones_habitacion,
-                    cantidad
-                )
-
-                posiciones.extend(
-                    seleccionadas
-                )
-
-        # ----------------------------------------------------
-        # Personas lógicas
-        # ----------------------------------------------------
-
-        self.people = create_people(
-            posiciones
-        )
-
-        # ----------------------------------------------------
-        # Gestor de evacuación
-        # ----------------------------------------------------
-
-        self.manager = EvacuationManager(
-            self.grid,
-            self.people
-        )
-
-        # ----------------------------------------------------
-        # Calcular rutas
-        # ----------------------------------------------------
-
-        self.manager.calculate_routes()
-
-        # ----------------------------------------------------
-        # Personas visuales
-        # ----------------------------------------------------
-
-        self.personas_visuales = []
-
-        for persona in self.people:
-
-            self.personas_visuales.append(
-                PersonaVisual(
-                    persona,
-                    self.edificio,
-                    0
-                )
-            )
-
-        # ----------------------------------------------------
-        # Tiempo
-        # ----------------------------------------------------
-
-        self.tiempo = 0
-
-        self.terminada = False
-
-        self.tiempo_final = None
-
-        # ----------------------------------------------------
-        # Panel
-        # ----------------------------------------------------
-
         self.fuente = pygame.font.SysFont(
             "arial",
             14,
             bold=True
         )
+        self.preparar_simulacion()
+        self.inicio_pendiente = True
+        self.input_mode = True
+        self.estado_ia = (
+            "Escribe una emergencia y pulsa Enter; F1-F4 carga escenarios locales."
+        )
+        pygame.key.start_text_input()
+
+    def preparar_simulacion(self):
+        self.edificio = Edificio()
+        self.instruccion = ""
+        self.aplicar_escenario(
+            EmergencyScenario(
+                "combinada",
+                "Sala",
+                people=24,
+                blocked_exits=["B", "C"],
+            )
+        )
+
+    def _posiciones_iniciales(self, cantidad, grid):
+        disponibles = []
+        for x, y, ancho, alto, _ in HABITACIONES:
+            for fila in range(y, y + alto):
+                for columna in range(x, x + ancho):
+                    node = grid.get_node(columna, fila)
+                    if node is not None and node.walkable:
+                        disponibles.append(node.position)
+        if cantidad > len(disponibles):
+            return []
+        return random.sample(disponibles, cantidad)
+
+    def aplicar_escenario(self, scenario):
+        if self.ai_future is not None:
+            self.ai_future.cancel()
+            self.ai_future = None
+        if self.input_mode:
+            pygame.key.stop_text_input()
+        self.input_mode = False
+        nuevo_grid = self.edificio.crear_logical_grid()
+        people = apply_scenario(
+            nuevo_grid,
+            scenario,
+            self._posiciones_iniciales
+        )
+        manager = EvacuationManager(nuevo_grid, people)
+        manager.calculate_routes()
+
+        self.grid = nuevo_grid
+        self.edificio.grid = nuevo_grid
+        self.people = people
+        self.manager = manager
+        self.personas_visuales = [
+            PersonaVisual(persona, self.edificio, 0)
+            for persona in people
+        ]
+        self.escenario = scenario
+        self.tiempo = 0.0
+        self.terminada = False
+        self.tiempo_final = None
+        self.inicio_pendiente = False
+        self.instruccion = ""
+        self.estado_ia = f"Escenario aplicado: {scenario.emergency_type} en {scenario.zone}."
+
+    def volver_a_inicio(self):
+        if self.ai_future is not None:
+            self.ai_future.cancel()
+            self.ai_future = None
+        self.input_mode = True
+        self.inicio_pendiente = True
+        self.instruccion = ""
+        self.estado_ia = "Escribe una emergencia y pulsa Enter; F1-F4 carga escenarios locales."
+        pygame.key.start_text_input()
+
+    def manejar_evento(self, evento):
+        if evento.type == pygame.TEXTINPUT and self.input_mode:
+            if len(self.instruccion) < 180:
+                self.instruccion += evento.text
+            return
+
+        if evento.type != pygame.KEYDOWN:
+            return
+
+        escenarios_locales = {
+            pygame.K_1: EmergencyScenario("incendio", "Laboratorio", 24),
+            pygame.K_KP1: EmergencyScenario("incendio", "Laboratorio", 24),
+            pygame.K_2: EmergencyScenario("zona_peligrosa", "Aula 2", 24),
+            pygame.K_KP2: EmergencyScenario("zona_peligrosa", "Aula 2", 24),
+            pygame.K_3: EmergencyScenario(
+                "salida_bloqueada",
+                "Pasillo central",
+                24,
+                blocked_exits=["B", "C"],
+            ),
+            pygame.K_KP3: EmergencyScenario(
+                "salida_bloqueada",
+                "Pasillo central",
+                24,
+                blocked_exits=["B", "C"],
+            ),
+            pygame.K_4: EmergencyScenario(
+                "combinada",
+                "Biblioteca",
+                24,
+                blocked_exits=["A", "D"],
+            ),
+            pygame.K_KP4: EmergencyScenario(
+                "combinada",
+                "Biblioteca",
+                24,
+                blocked_exits=["A", "D"],
+            ),
+        }
+
+        escenarios_inicio = {
+            pygame.K_F1: escenarios_locales[pygame.K_1],
+            pygame.K_F2: escenarios_locales[pygame.K_2],
+            pygame.K_F3: escenarios_locales[pygame.K_3],
+            pygame.K_F4: escenarios_locales[pygame.K_4],
+        }
+
+        if self.input_mode:
+            if evento.key in escenarios_inicio:
+                self.aplicar_escenario(escenarios_inicio[evento.key])
+            elif evento.key == pygame.K_ESCAPE:
+                if self.inicio_pendiente:
+                    self.estado_ia = "Escribe una emergencia o elige un escenario local con F1-F4."
+                else:
+                    self.input_mode = False
+                    self.instruccion = ""
+                    pygame.key.stop_text_input()
+                    self.estado_ia = "Entrada cancelada. Usa 1-4 para escenarios locales."
+            elif evento.key == pygame.K_BACKSPACE:
+                self.instruccion = self.instruccion[:-1]
+            elif evento.key == pygame.K_RETURN:
+                self.enviar_instruccion()
+            return
+
+        if evento.key == pygame.K_b:
+            self.volver_a_inicio()
+            return
+
+        if evento.key in escenarios_locales:
+            self.aplicar_escenario(escenarios_locales[evento.key])
+        elif evento.key in escenarios_inicio:
+            self.aplicar_escenario(escenarios_inicio[evento.key])
+
+    def enviar_instruccion(self):
+        if self.ai_future is not None:
+            self.estado_ia = "Espera a que termine la solicitud actual."
+            return
+        if not self.instruccion.strip():
+            self.estado_ia = "Escribe una instrucción antes de enviarla."
+            return
+        instruction = self.instruccion.strip()
+        self.ai_future = self.ai_executor.submit(
+            self.ai_client.generate_scenario,
+            instruction,
+        )
+        self.input_mode = False
+        pygame.key.stop_text_input()
+        self.estado_ia = "Consultando la API de IA..."
 
     def actualizar(self, dt):
+
+        if self.ai_future is not None and self.ai_future.done():
+            future = self.ai_future
+            self.ai_future = None
+            try:
+                scenario_data = future.result()
+                scenario = EmergencyScenario.from_dict(scenario_data)
+                self.aplicar_escenario(scenario)
+                self.instruccion = ""
+            except (ValueError, RuntimeError) as error:
+                self.estado_ia = str(error)
+                if self.inicio_pendiente:
+                    self.input_mode = True
+                    pygame.key.start_text_input()
+
+        if self.inicio_pendiente:
+            return
 
         if self.terminada:
             return
 
         self.tiempo += dt
+        self.manager.elapsed_time = self.tiempo
 
         for persona_visual in (
             self.personas_visuales
@@ -1001,18 +1040,14 @@ class Simulacion:
             )
 
         # ----------------------------------------------------
-        # Comprobar evacuación completa
-        # ----------------------------------------------------
-
-        if self.manager.all_evacuated():
-
+        if self.manager.is_finished():
             self.terminada = True
-
-            self.tiempo_final = (
-                self.tiempo
-            )
+            self.tiempo_final = self.tiempo
 
     def dibujar(self, pantalla):
+        if self.inicio_pendiente:
+            self.dibujar_inicio(pantalla)
+            return
 
         # ----------------------------------------------------
         # Fondo
@@ -1085,6 +1120,25 @@ class Simulacion:
             pantalla
         )
 
+    def dibujar_inicio(self, pantalla):
+        pantalla.fill((20, 20, 25))
+        titulo = pygame.font.SysFont("arial", 30, bold=True)
+        texto = pygame.font.SysFont("arial", 18)
+        lineas = [
+            ("SIMULADOR DE EVACUACIÓN", (255, 255, 255), titulo),
+            ("Describe el escenario de emergencia y pulsa Enter:", (220, 220, 225), texto),
+            (self.instruccion + ("|" if self.input_mode else ""), (120, 210, 255), texto),
+            ("Ejemplo: Incendio en el Laboratorio, bloquea la salida norte, 20 personas.", (190, 195, 205), texto),
+            ("Escenarios locales sin API: F1 incendio | F2 zona peligrosa | F3 bloqueos | F4 combinada", (190, 195, 205), texto),
+            (self.estado_ia, (255, 190, 110), texto),
+        ]
+
+        for index, (line, color, font) in enumerate(lineas):
+            while font.size(line)[0] > ANCHO - 48 and line:
+                line = line[:-2] + "…"
+            surface = font.render(line, True, color)
+            pantalla.blit(surface, (24, 80 + index * 54))
+
     def dibujar_panel(self, pantalla):
 
         y0 = ROWS * TILE
@@ -1104,120 +1158,59 @@ class Simulacion:
         # Datos
         # ----------------------------------------------------
 
-        resumen = (
-            self.manager
-            .get_evacuation_summary()
-        )
-
-        evacuadas = (
-            resumen["people_evacuated"]
-        )
-
-        total = (
-            resumen["total_people"]
-        )
-
-        sin_ruta = (
-            resumen["people_without_route"]
-        )
-
-        uso_salidas = (
-            resumen["exit_usage"]
-        )
-
-        abiertas = ", ".join(
-            SALIDAS[posicion]
-            for posicion
-            in self.edificio.salidas_abiertas()
-        )
-
-        bloqueadas = ", ".join(
-            SALIDAS[posicion]
-            for posicion
-            in sorted(
-                self.edificio.bloqueadas
-            )
-        )
-
-        # ----------------------------------------------------
-        # Primera línea
-        # ----------------------------------------------------
-
-        linea1 = (
-            f"Evacuados: "
-            f"{evacuadas}/{total}"
-            f"    "
-            f"Tiempo: "
-            f"{self.tiempo:4.1f} s"
-            f"    "
-            f"Abiertas: {abiertas}"
-            f"    "
-            f"Bloqueadas: {bloqueadas}"
-        )
-
-        texto1 = self.fuente.render(
-            linea1,
-            True,
-            (255, 255, 255)
-        )
-
-        pantalla.blit(
-            texto1,
-            (
-                12,
-                y0 + 8
-            )
-        )
-
-        # ----------------------------------------------------
-        # Segunda línea: uso de salidas
-        # ----------------------------------------------------
-
-        linea2 = (
-            f"A: {uso_salidas.get((0, 8), 0)}"
-            f"    "
-            f"B: {uso_salidas.get((29, 8), 0)}"
-            f"    "
-            f"C: {uso_salidas.get((15, 5), 0)}"
-            f"    "
-            f"D: {uso_salidas.get((15, 11), 0)}"
-        )
+        resumen = self.manager.get_evacuation_summary()
+        usage = resumen.exit_usage
+        open_exits = ", ".join(
+            self.grid.get_exit_identifier(position)
+            for position in self.grid.get_exits()
+        ) or "ninguna"
+        blocked_exits = ", ".join(
+            self.grid.get_exit_identifier(position)
+            for position in sorted(self.grid.blocked_exits)
+        ) or "ninguna"
 
         if self.terminada:
-            linea2 += (
-                f"    |    EVACUACIÓN COMPLETA"
-                f" en {self.tiempo_final:.1f} s"
-                f"    |    R = reiniciar"
+            estado = (
+                "EVACUACIÓN COMPLETA"
+                if resumen.complete
+                else "SIMULACIÓN FINALIZADA: quedaron personas sin evacuar"
             )
-
-            color2 = (
-                100,
-                230,
-                120
+            result_line = (
+                f"{estado} en {self.tiempo_final:.1f} s | "
+                f"Uso real de salidas: "
+                f"A {usage.get(EXIT_IDS['a'], 0)}  "
+                f"B {usage.get(EXIT_IDS['b'], 0)}  "
+                f"C {usage.get(EXIT_IDS['c'], 0)}  "
+                f"D {usage.get(EXIT_IDS['d'], 0)} | B: nuevo escenario"
             )
-
+            result_color = (100, 230, 120) if resumen.complete else (255, 170, 90)
         else:
-            linea2 += (
-                f"    |    ESC = salir"
-                f"    R = reiniciar"
+            result_line = (
+                f"En curso | Sin ruta: {resumen.people_without_route} | "
+                f"Personas pendientes: {resumen.people_not_evacuated} | "
+                f"B: nuevo escenario"
             )
+            result_color = (230, 230, 235)
 
-            color2 = (
-                230,
-                230,
-                235
-            )
-
-        texto2 = self.fuente.render(
-            linea2,
-            True,
-            color2
-        )
-
-        pantalla.blit(
-            texto2,
+        lines = [
             (
-                12,
-                y0 + 34
-            )
-        )
+                f"Evacuados: {resumen.people_evacuated}/{resumen.total_people}  "
+                f"Tiempo: {self.tiempo:.1f} s"
+            ),
+            (
+                f"Salidas disponibles ({resumen.available_exits}): {open_exits}  |  "
+                f"Bloqueadas ({resumen.blocked_exits}): {blocked_exits}"
+            ),
+            result_line,
+        ]
+        colors = [
+            (255, 255, 255),
+            (255, 255, 255),
+            result_color,
+        ]
+
+        for index, (line, color) in enumerate(zip(lines, colors)):
+            while self.fuente.size(line)[0] > ANCHO - 24 and line:
+                line = line[:-2] + "…"
+            text = self.fuente.render(line, True, color)
+            pantalla.blit(text, (12, y0 + 4 + index * 25))

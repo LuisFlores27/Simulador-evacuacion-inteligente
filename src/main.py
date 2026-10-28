@@ -38,14 +38,16 @@ def main():
 
             if evento.type == pygame.QUIT:
                 ejecutando = False
+            else:
+                estaba_escribiendo = simulacion.input_mode
+                simulacion.manejar_evento(evento)
 
-            elif evento.type == pygame.KEYDOWN:
-
-                if evento.key == pygame.K_ESCAPE:
+            if evento.type == pygame.KEYDOWN:
+                if (
+                    evento.key == pygame.K_ESCAPE
+                    and not estaba_escribiendo
+                ):
                     ejecutando = False
-
-                elif evento.key == pygame.K_r:
-                    simulacion.reiniciar()
 
         # ----------------------------------------------------
         # Actualizar simulación
@@ -64,6 +66,10 @@ def main():
         pygame.display.flip()
 
     pygame.quit()
+    simulacion.ai_executor.shutdown(
+        wait=False,
+        cancel_futures=True
+    )
 
 
 if __name__ == "__main__":
