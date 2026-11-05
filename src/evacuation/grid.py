@@ -8,6 +8,8 @@ class Grid:
         self.nodes = []
         self.exits = {}
         self.blocked_exits = set()
+        self.exit_offset_y = 0
+        self.floor_offsets = None
 
         for y in range(height):
             row = []
@@ -32,10 +34,6 @@ class Grid:
     def set_obstacle(self, x, y):
         self.set_node_type(x, y, "obstaculo")
 
-    def set_exit(self, x, y):
-        self.set_node_type(x, y, "salida")
-        self.exits[(x, y)] = None
-
     def register_exit(self, position, identifier):
         self.exits[position] = identifier
         if position not in self.blocked_exits:
@@ -53,12 +51,6 @@ class Grid:
             raise ValueError(f"No existe una salida en {position}.")
         self.blocked_exits.add(position)
         self.set_node_type(*position, "salida_bloqueada")
-
-    def unblock_exit(self, position):
-        if position not in self.exits:
-            raise ValueError(f"No existe una salida en {position}.")
-        self.blocked_exits.discard(position)
-        self.set_node_type(*position, "salida")
 
     def get_exit_identifier(self, position):
         return self.exits.get(position)

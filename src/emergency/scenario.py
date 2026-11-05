@@ -2,21 +2,23 @@ import json
 import unicodedata
 
 
-MAX_PEOPLE = 24
+MAX_PEOPLE = 80
+FLOOR_HEIGHT = 18
 EMERGENCY_TYPES = {
     "incendio",
     "zona_peligrosa",
     "salida_bloqueada",
     "combinada",
+    "terremoto",
 }
 
 ZONE_CELLS = {
     "laboratorio": (1, 1, 6, 4),
-    "aula 1": (8, 1, 7, 4),
+    "aula 1": (8, 1, 5, 4),
     "aula 2": (16, 1, 7, 4),
     "oficina": (24, 1, 5, 4),
     "biblioteca": (1, 12, 6, 5),
-    "aula 3": (8, 12, 7, 5),
+    "aula 3": (8, 12, 5, 5),
     "aula 4": (16, 12, 7, 5),
     "sala": (24, 12, 5, 5),
     "pasillo central": (1, 6, 28, 5),
@@ -54,6 +56,10 @@ class EmergencyScenario:
         people=24,
         blocked_exit=None,
         blocked_exits=None,
+        floor=1,
+        people_by_floor=None,
+        danger_zones=None,
+        fire_zones=None,
     ):
         if (
             not isinstance(emergency_type, str)
@@ -62,11 +68,55 @@ class EmergencyScenario:
             raise ValueError(f"Tipo de emergencia inválido: {emergency_type}.")
         if not isinstance(zone, str) or _normalize(zone) not in ZONE_CELLS:
             raise ValueError(f"Zona desconocida: {zone}.")
-        if type(people) is not int or not 1 <= people <= MAX_PEOPLE:
-            raise ValueError(f"La cantidad de personas debe estar entre 1 y {MAX_PEOPLE}.")
+        if people_by_floor is None:
+            if type(people) is not int or not 1 <= people <= MAX_PEOPLE:
+                raise ValueError(
+                    f"La cantidad de personas debe estar entre 1 y {MAX_PEOPLE}."
+                )
+            self.people_by_floor = None
+        else:
+            if not isinstance(people_by_floor, dict):
+                raise ValueError("'people_by_floor' debe ser un objeto por piso.")
+            if set(people_by_floor) - {"1", "2"}:
+                raise ValueError("'people_by_floor' solo admite las claves '1' y '2'.")
+            counts = {
+                str(floor_number): people_by_floor.get(str(floor_number), 0)
+                for floor_number in (1, 2)
+            }
+            if any(
+                type(count) is not int or not 0 <= count <= MAX_PEOPLE
+                for count in counts.values()
+            ):
+                raise ValueError(
+                    f"Cada cantidad por piso debe ser un entero de 0 a {MAX_PEOPLE}."
+                )
+            people = sum(counts.values())
+            if not 1 <= people <= MAX_PEOPLE:
+                raise ValueError(
+                    f"El total de personas debe estar entre 1 y {MAX_PEOPLE}."
+                )
+            self.people_by_floor = {
+                int(floor_number): count
+                for floor_number, count in counts.items()
+            }
+        if type(floor) is not int or floor not in {1, 2}:
+            raise ValueError("El piso de la emergencia debe ser 1 o 2.")
         self.emergency_type = emergency_type
         self.zone = zone
         self.people = people
+        self.floor = floor
+        self.danger_zones = self._validate_danger_zones(
+            danger_zones,
+            floor,
+        )
+        self.fire_zones = self._validate_danger_zones(
+            fire_zones,
+            floor,
+        )
+        if self.fire_zones and emergency_type not in {"incendio", "combinada"}:
+            raise ValueError(
+                "Las zonas con fuego requieren una emergencia de incendio."
+            )
         exits = list(blocked_exits or [])
         if blocked_exit is not None:
             exits.append(blocked_exit)
@@ -90,7 +140,16 @@ class EmergencyScenario:
         if not isinstance(data, dict):
             raise ValueError("La respuesta de la IA debe ser un objeto JSON.")
 
-        allowed = {"emergency_type", "zone", "people", "blocked_exits"}
+        allowed = {
+            "emergency_type",
+            "zone",
+            "people",
+            "people_by_floor",
+            "danger_zones",
+            "fire_zones",
+            "blocked_exits",
+            "floor",
+        }
         unknown = set(data) - allowed
         if unknown:
             raise ValueError(
@@ -105,21 +164,30 @@ class EmergencyScenario:
         emergency_type = data["emergency_type"]
         zone = data["zone"]
         people = data.get("people", 24)
+        people_by_floor = data.get("people_by_floor")
+        danger_zones = data.get("danger_zones")
+        fire_zones = data.get("fire_zones")
         blocked_exits = data.get("blocked_exits", [])
+        floor = data.get("floor", 1)
 
         if not isinstance(emergency_type, str) or emergency_type not in EMERGENCY_TYPES:
             raise ValueError(
-                "Tipo de emergencia inválido. Use incendio, zona_peligrosa, "
-                "salida_bloqueada o combinada."
+                "Tipo de emergencia inválido. Use incendio, terremoto, "
+                "zona_peligrosa, salida_bloqueada o combinada."
             )
         if not isinstance(zone, str) or _normalize(zone) not in ZONE_CELLS:
             raise ValueError(
                 "Zona desconocida. Use un nombre de habitación o 'Pasillo central'."
             )
-        if type(people) is not int or not 1 <= people <= MAX_PEOPLE:
+        if (
+            people_by_floor is None
+            and (type(people) is not int or not 1 <= people <= MAX_PEOPLE)
+        ):
             raise ValueError(
                 f"'people' debe ser un entero entre 1 y {MAX_PEOPLE}."
             )
+        if type(floor) is not int or floor not in {1, 2}:
+            raise ValueError("'floor' debe ser el entero 1 o 2.")
         if not isinstance(blocked_exits, list):
             raise ValueError("'blocked_exits' debe ser una lista de salidas.")
         if any(not isinstance(exit_name, str) for exit_name in blocked_exits):
@@ -141,7 +209,45 @@ class EmergencyScenario:
             zone=zone,
             people=people,
             blocked_exits=resolved_exits,
+            floor=floor,
+            people_by_floor=people_by_floor,
+            danger_zones=danger_zones,
+            fire_zones=fire_zones,
         )
+
+    @staticmethod
+    def _validate_danger_zones(danger_zones, default_floor):
+        if danger_zones is None:
+            return ()
+        if not isinstance(danger_zones, list):
+            raise ValueError("'danger_zones' debe ser una lista de zonas.")
+        normalized_zones = []
+        for item in danger_zones:
+            if isinstance(item, str):
+                zone = item
+                floor = default_floor
+            elif isinstance(item, dict) and set(item) == {"zone", "floor"}:
+                zone = item["zone"]
+                floor = item["floor"]
+                if type(floor) is not int or floor not in {1, 2}:
+                    raise ValueError(
+                        "El piso de cada zona peligrosa debe ser 1 o 2."
+                    )
+            else:
+                raise ValueError(
+                    "Cada zona peligrosa debe ser un nombre o incluir zona y piso."
+                )
+            if not isinstance(zone, str) or _normalize(zone) not in ZONE_CELLS:
+                raise ValueError(f"Zona peligrosa desconocida: {zone}.")
+            canonical = next(
+                name
+                for name in ZONE_CELLS
+                if _normalize(name) == _normalize(zone)
+            )
+            entry = (canonical, floor)
+            if entry not in normalized_zones:
+                normalized_zones.append(entry)
+        return tuple(normalized_zones)
 
     @classmethod
     def from_json(cls, content):
@@ -152,23 +258,40 @@ class EmergencyScenario:
         return cls.from_dict(data)
 
     def zone_positions(self):
-        x, y, width, height = ZONE_CELLS[_normalize(self.zone)]
+        return self.positions_for_zone(self.zone)
+
+    def positions_for_zone(self, zone, floor=None):
+        x, y, width, height = ZONE_CELLS[_normalize(zone)]
+        target_floor = self.floor if floor is None else floor
+        if target_floor == 2:
+            y += FLOOR_HEIGHT
         return {
             (column, row)
             for row in range(y, y + height)
             for column in range(x, x + width)
         }
 
-    def blocked_exit_positions(self):
-        return {
-            EXIT_IDS[_normalize(exit_name)]
-            for exit_name in self.blocked_exits
-        }
-
     def __str__(self):
+        people_description = (
+            ", ".join(
+                f"piso {floor}: {count}"
+                for floor, count in self.people_by_floor.items()
+            )
+            if self.people_by_floor is not None
+            else str(self.people)
+        )
         return (
             f"Emergencia: {self.emergency_type}\n"
-            f"Zona afectada: {self.zone}\n"
-            f"Personas: {self.people}\n"
+            f"Zona afectada: {self.zone} (piso {self.floor})\n"
+            "Zonas peligrosas: "
+            + (
+                ", ".join(
+                    f"{zone} (piso {floor})"
+                    for zone, floor in self.danger_zones
+                )
+                or "ninguna adicional"
+            )
+            + "\n"
+            f"Personas: {people_description}\n"
             f"Salidas bloqueadas: {', '.join(self.blocked_exits) or 'ninguna'}"
         )

@@ -12,13 +12,14 @@ class AStar:
             (current.y - goal.y) ** 2
         )
 
-    def get_neighbors(self, node):
+    def get_neighbors(self, node, blocked_positions=None):
         directions = [
             (0, -1),
             (0, 1),
             (-1, 0),
             (1, 0)
         ]
+        blocked_positions = blocked_positions or set()
 
         neighbors = []
 
@@ -28,7 +29,11 @@ class AStar:
                 node.y + dy
             )
 
-            if neighbor and neighbor.walkable:
+            if (
+                neighbor
+                and neighbor.walkable
+                and neighbor.position not in blocked_positions
+            ):
                 neighbors.append(neighbor)
 
         return neighbors
@@ -39,7 +44,19 @@ class AStar:
 
         return 1
 
-    def find_path(self, start_position, goal_position):
+    def find_path(
+        self,
+        start_position,
+        goal_position,
+        blocked_positions=None,
+    ):
+        blocked_positions = blocked_positions or set()
+        if (
+            start_position in blocked_positions
+            or goal_position in blocked_positions
+        ):
+            return []
+
         start = self.grid.get_node(
             start_position[0],
             start_position[1]
@@ -83,7 +100,7 @@ class AStar:
                     current.position
                 )
 
-            for neighbor in self.get_neighbors(current):
+            for neighbor in self.get_neighbors(current, blocked_positions):
                 movement_cost = self.get_movement_cost(neighbor)
 
                 new_cost = (
@@ -111,7 +128,7 @@ class AStar:
 
         return []
 
-    def find_best_exit(self, start_position, exits):
+    def find_best_exit(self, start_position, exits, blocked_positions=None):
         best_path = []
         best_cost = float("inf")
         best_exit = None
@@ -119,7 +136,8 @@ class AStar:
         for exit_position in exits:
             path = self.find_path(
                 start_position,
-                exit_position
+                exit_position,
+                blocked_positions,
             )
 
             if not path:
