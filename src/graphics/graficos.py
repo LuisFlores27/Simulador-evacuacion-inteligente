@@ -5,26 +5,35 @@ import pygame
 
 from ai.client import GenerativeAIClient
 from emergency.application import apply_scenario
-from emergency.scenario import EmergencyScenario, EXIT_IDS, ZONE_CELLS
+from emergency.scenario import (
+    EmergencyScenario,
+    EXIT_IDS,
+    FLOOR_HEIGHT,
+    ZONE_CELLS,
+)
 from evacuation.grid import Grid
 from evacuation.manager import EvacuationManager
-
-
-# ============================================================
-# CONFIGURACIÓN VISUAL
-# ============================================================
-
-TILE = 32
-
-COLS = 30
-ROWS = 18
-
-PANEL = 88
-
-ANCHO = COLS * TILE
-ALTO = ROWS * TILE + PANEL
-
-FPS = 60
+from graphics.config import (
+    ALTO,
+    ANCHO,
+    COLS,
+    FLOORS,
+    FPS,
+    PANEL,
+    ROWS,
+    STAIR_X,
+    TILE,
+    TOTAL_ROWS,
+)
+from ui.interfaz import (
+    COLORS,
+    INSTRUCTION_MAX_HEIGHT,
+    INSTRUCTION_MIN_HEIGHT,
+    INSTRUCTION_TOP,
+    PREVIEW_BACK_BUTTON,
+    PREVIEW_BUTTON,
+    Interfaz,
+)
 
 
 # ============================================================
@@ -36,14 +45,7 @@ PISO = 1
 PASILLO = 2
 PUERTA = 3
 SALIDA = 4
-
-CAMINABLES = {
-    PISO,
-    PASILLO,
-    PUERTA,
-    SALIDA
-}
-
+ESCALERA = 5
 
 # ============================================================
 # HABITACIONES
@@ -69,17 +71,17 @@ HABITACIONES = [
 # ============================================================
 
 SALIDAS = {
-    position: identifier.upper()
+    (position[0], position[1] + FLOOR_HEIGHT): identifier.upper()
     for identifier, position in EXIT_IDS.items()
 }
 
 
 # Colores de rutas según la salida
 COLOR_SALIDA = {
-    "A": (30, 120, 230),
-    "B": (120, 120, 120),
-    "C": (120, 120, 120),
-    "D": (170, 60, 200)
+    "A": (64, 158, 255),
+    "B": (255, 177, 74),
+    "C": (54, 203, 174),
+    "D": (194, 119, 255),
 }
 
 
@@ -93,17 +95,15 @@ class Edificio:
 
         self.mapa = [
             [PARED for _ in range(COLS)]
-            for _ in range(ROWS)
+            for _ in range(TOTAL_ROWS)
         ]
 
         self.nombres_habitaciones = []
         self.grid = None
 
-        self.fuente = pygame.font.SysFont(
-            "arial",
-            14,
-            bold=True
-        )
+        self.fuente = pygame.font.SysFont("arial", 13, bold=True)
+        self.fuente_piso = pygame.font.SysFont("arial", 16, bold=True)
+        self.fuente_zona = pygame.font.SysFont("arial", 12, bold=True)
 
         self.construir_edificio()
 
@@ -113,48 +113,44 @@ class Edificio:
         # Habitaciones
         # ----------------------------------------------------
 
-        for x, y, ancho, alto, nombre in HABITACIONES:
+        for piso in (2, 1):
+            offset_y = (2 - piso) * FLOOR_HEIGHT
 
-            self.nombres_habitaciones.append(
-                (x, y, ancho, alto, nombre)
-            )
+            for x, y, ancho, alto, nombre in HABITACIONES:
+                y += offset_y
+                self.nombres_habitaciones.append(
+                    (x, y, ancho, alto, f"{nombre} (P{piso})")
+                )
 
-            for fila in range(y, y + alto):
-                for columna in range(x, x + ancho):
+                for fila in range(y, y + alto):
+                    for columna in range(x, x + ancho):
+                        if 0 <= fila < TOTAL_ROWS and 0 <= columna < COLS:
+                            self.mapa[fila][columna] = PISO
 
-                    if (
-                        0 <= fila < ROWS
-                        and 0 <= columna < COLS
-                    ):
-                        self.mapa[fila][columna] = PISO
+            # Pasillo central
+            x, y, width, height = ZONE_CELLS["pasillo central"]
+            for fila in range(y + offset_y, y + offset_y + height):
+                for columna in range(x, x + width):
+                    self.mapa[fila][columna] = PASILLO
 
-        # ----------------------------------------------------
-        # Pasillo central
-        # ----------------------------------------------------
+            # Puertas
+            for x, y, ancho, alto, _ in HABITACIONES:
+                fila_puerta = (5 if y < 6 else 11) + offset_y
+                puerta_x = x + ancho // 2
+                if 0 <= puerta_x < COLS and 0 <= fila_puerta < TOTAL_ROWS:
+                    self.mapa[fila_puerta][puerta_x] = PUERTA
 
-        x, y, width, height = ZONE_CELLS["pasillo central"]
-        for fila in range(y, y + height):
-            for columna in range(x, x + width):
-                self.mapa[fila][columna] = PASILLO
+        # Close the stairwell sides so rooms cannot enter it through a wall.
+        for y in range(11, FLOOR_HEIGHT + 6):
+            self.mapa[y][STAIR_X - 1] = PARED
+            self.mapa[y][STAIR_X + 1] = PARED
 
-        # ----------------------------------------------------
-        # Puertas
-        # ----------------------------------------------------
-
-        for x, y, ancho, alto, nombre in HABITACIONES:
-
-            fila_puerta = 5 if y < 6 else 11
-
-            puerta_x = x + ancho // 2
-
-            if (
-                0 <= puerta_x < COLS
-                and 0 <= fila_puerta < ROWS
-            ):
-                self.mapa[fila_puerta][puerta_x] = PUERTA
+        # La escalera es el único paso que conecta ambos pisos.
+        for y in range(11, FLOOR_HEIGHT + 7):
+            self.mapa[y][STAIR_X] = ESCALERA
 
         # ----------------------------------------------------
-        # Salidas
+        # Salidas del primer piso
         # ----------------------------------------------------
 
         for posicion in SALIDAS:
@@ -189,27 +185,6 @@ class Edificio:
             if node.node_type == "peligro"
         }
 
-    def es_caminable(self, x, y):
-
-        if not (
-            0 <= x < COLS
-            and 0 <= y < ROWS
-        ):
-            return False
-
-        if self.mapa[y][x] not in CAMINABLES:
-            return False
-        node = self.grid.get_node(x, y) if self.grid else None
-        return node is None or node.walkable
-
-    def salidas_abiertas(self):
-
-        return [
-            salida
-            for salida in SALIDAS
-            if salida not in self.bloqueadas
-        ]
-
     def casilla_a_pixel(self, posicion):
 
         x, y = posicion
@@ -226,14 +201,15 @@ class Edificio:
         # ----------------------------------------------------
 
         colores = {
-            PARED: (60, 60, 70),
-            PISO: (225, 225, 215),
-            PASILLO: (190, 195, 205),
-            PUERTA: (150, 100, 50),
-            SALIDA: (60, 180, 90)
+            PARED: COLORS["wall"],
+            PISO: COLORS["floor"],
+            PASILLO: COLORS["corridor"],
+            PUERTA: (232, 177, 91),
+            SALIDA: COLORS["green"],
+            ESCALERA: (185, 202, 221),
         }
 
-        for y in range(ROWS):
+        for y in range(TOTAL_ROWS):
             for x in range(COLS):
 
                 rect = pygame.Rect(
@@ -243,20 +219,87 @@ class Edificio:
                     TILE
                 )
 
-                pygame.draw.rect(
-                    pantalla,
-                    colores[self.mapa[y][x]],
-                    rect
-                )
+                color = colores[self.mapa[y][x]]
+                if self.mapa[y][x] == PISO and (x + y) % 2:
+                    color = COLORS["floor_alt"]
+                pygame.draw.rect(pantalla, color, rect)
 
-                if self.mapa[y][x] != PARED:
-
+                if self.mapa[y][x] == PARED:
                     pygame.draw.rect(
                         pantalla,
-                        (170, 170, 175),
+                        COLORS["wall_line"],
                         rect,
-                        1
+                        1,
                     )
+                else:
+                    pygame.draw.rect(
+                        pantalla,
+                        (215, 224, 234),
+                        rect,
+                        1,
+                    )
+
+                if self.mapa[y][x] == PUERTA:
+                    pygame.draw.line(
+                        pantalla,
+                        (150, 99, 40),
+                        (x * TILE + 8, y * TILE + TILE - 6),
+                        (x * TILE + TILE - 8, y * TILE + TILE - 6),
+                        2,
+                    )
+
+                if self.mapa[y][x] == ESCALERA:
+                    pygame.draw.line(
+                        pantalla,
+                        (248, 251, 255),
+                        (x * TILE + 7, y * TILE + 7),
+                        (x * TILE + TILE - 7, y * TILE + 7),
+                        2,
+                    )
+                    pygame.draw.line(
+                        pantalla,
+                        (113, 137, 165),
+                        (x * TILE + 4, y * TILE),
+                        (x * TILE + 4, y * TILE + TILE),
+                        3,
+                    )
+                    pygame.draw.line(
+                        pantalla,
+                        (113, 137, 165),
+                        (x * TILE + TILE - 4, y * TILE),
+                        (x * TILE + TILE - 4, y * TILE + TILE),
+                        3,
+                    )
+
+        for piso, indice_visual in ((2, 0), (1, 1)):
+            badge = pygame.Rect(
+                8,
+                indice_visual * FLOOR_HEIGHT * TILE + 5,
+                82,
+                25,
+            )
+            pygame.draw.rect(
+                pantalla,
+                COLORS["background_soft"],
+                badge,
+                border_radius=8,
+            )
+            pygame.draw.rect(
+                pantalla,
+                COLORS["border"],
+                badge,
+                width=1,
+                border_radius=8,
+            )
+            texto = self.fuente_piso.render(
+                f"PISO {piso}",
+                True,
+                COLORS["text"],
+            )
+            pantalla.blit(
+                texto,
+                texto.get_rect(center=badge.center),
+            )
 
         # ----------------------------------------------------
         # FUEGO ANIMADO
@@ -265,13 +308,31 @@ class Edificio:
         for x, y in self.zonas_peligrosas:
             px = x * TILE
             py = y * TILE
+            tile = pygame.Rect(px + 2, py + 2, TILE - 4, TILE - 4)
             pygame.draw.rect(
                 pantalla,
-                (215, 165, 45),
-                (px, py, TILE, TILE)
+                (255, 226, 166),
+                tile,
+                border_radius=6,
             )
-            texto = self.fuente.render("!", True, (45, 35, 20))
-            pantalla.blit(texto, texto.get_rect(center=(px + TILE // 2, py + TILE // 2)))
+            pygame.draw.rect(
+                pantalla,
+                (233, 166, 65),
+                tile,
+                width=2,
+                border_radius=6,
+            )
+            pygame.draw.circle(
+                pantalla,
+                (177, 106, 31),
+                (px + TILE // 2, py + TILE // 2),
+                8,
+            )
+            texto = self.fuente.render("!", True, (255, 250, 238))
+            pantalla.blit(
+                texto,
+                texto.get_rect(center=(px + TILE // 2, py + TILE // 2)),
+            )
 
         for x, y in self.fuego:
 
@@ -286,26 +347,23 @@ class Edificio:
                 + y * 2.3
             )
 
-            rojo = 235
-            verde = int(
-                110 + 50 * variacion
-            )
+            rojo = 238
+            verde = int(78 + 30 * variacion)
 
             color_fuego = (
                 rojo,
                 verde,
-                20
+                48
             )
 
+            tile = pygame.Rect(px + 2, py + 2, TILE - 4, TILE - 4)
+            pygame.draw.rect(pantalla, color_fuego, tile, border_radius=6)
             pygame.draw.rect(
                 pantalla,
-                color_fuego,
-                (
-                    px,
-                    py,
-                    TILE,
-                    TILE
-                )
+                (255, 208, 153),
+                tile,
+                width=1,
+                border_radius=6,
             )
 
             # Llama interior
@@ -318,7 +376,7 @@ class Edificio:
 
             pygame.draw.circle(
                 pantalla,
-                (255, 180, 30),
+                (255, 205, 101),
                 (
                     px + TILE // 2,
                     py + TILE // 2
@@ -330,7 +388,7 @@ class Edificio:
         # SALIDAS
         # ----------------------------------------------------
 
-        for posicion, letra in SALIDAS.items():
+        for posicion in SALIDAS:
 
             x, y = posicion
 
@@ -343,15 +401,19 @@ class Edificio:
 
             if bloqueada:
 
+                tile_color = COLORS["red"]
                 pygame.draw.rect(
                     pantalla,
-                    (200, 40, 40),
-                    (
-                        px,
-                        py,
-                        TILE,
-                        TILE
-                    )
+                    tile_color,
+                    (px + 2, py + 2, TILE - 4, TILE - 4),
+                    border_radius=7,
+                )
+                pygame.draw.rect(
+                    pantalla,
+                    (255, 213, 214),
+                    (px + 2, py + 2, TILE - 4, TILE - 4),
+                    width=1,
+                    border_radius=7,
                 )
 
                 pygame.draw.line(
@@ -386,19 +448,23 @@ class Edificio:
 
                 pygame.draw.rect(
                     pantalla,
-                    (60, 180, 90),
-                    (
-                        px,
-                        py,
-                        TILE,
-                        TILE
-                    )
+                    COLORS["green"],
+                    (px + 2, py + 2, TILE - 4, TILE - 4),
+                    border_radius=7,
+                )
+                pygame.draw.rect(
+                    pantalla,
+                    (197, 255, 226),
+                    (px + 2, py + 2, TILE - 4, TILE - 4),
+                    width=1,
+                    border_radius=7,
                 )
 
         # ----------------------------------------------------
         # NOMBRES DE HABITACIONES
         # ----------------------------------------------------
 
+        hazard_positions = self.zonas_peligrosas | self.fuego
         for (
             x,
             y,
@@ -407,18 +473,38 @@ class Edificio:
             nombre
         ) in self.nombres_habitaciones:
 
-            texto = self.fuente.render(
+            tiene_peligro = any(
+                x <= peligro_x < x + ancho
+                and y <= peligro_y < y + alto
+                for peligro_x, peligro_y in hazard_positions
+            )
+            color_fondo = (116, 66, 43) if tiene_peligro else (248, 250, 253)
+            color_borde = COLORS["amber"] if tiene_peligro else (209, 220, 232)
+            color_texto = (255, 239, 211) if tiene_peligro else (74, 91, 112)
+            texto = self.fuente_zona.render(
                 nombre,
                 True,
-                (80, 80, 90)
+                color_texto,
+            )
+            badge = texto.get_rect(topleft=(x * TILE + 6, y * TILE + 4))
+            badge.inflate_ip(12, 6)
+            pygame.draw.rect(
+                pantalla,
+                color_fondo,
+                badge,
+                border_radius=6,
+            )
+            pygame.draw.rect(
+                pantalla,
+                color_borde,
+                badge,
+                width=1,
+                border_radius=6,
             )
 
             pantalla.blit(
                 texto,
-                (
-                    x * TILE + 6,
-                    y * TILE + 4
-                )
+                texto.get_rect(center=badge.center),
             )
 
     def dibujar_nombres_salidas(self, pantalla):
@@ -460,14 +546,24 @@ class Edificio:
 
         grid = Grid(
             width=COLS,
-            height=ROWS
+            height=TOTAL_ROWS
+        )
+        grid.exit_offset_y = FLOOR_HEIGHT
+        grid.floor_offsets = {1: FLOOR_HEIGHT, 2: 0}
+        grid.stair_route = [
+            (STAIR_X, y)
+            for y in range(10, FLOOR_HEIGHT + 7)
+        ]
+        grid.stair_exit_landing = (
+            STAIR_X + 1,
+            FLOOR_HEIGHT + 6,
         )
 
         # ----------------------------------------------------
         # Mapa visual → mapa lógico
         # ----------------------------------------------------
 
-        for y in range(ROWS):
+        for y in range(TOTAL_ROWS):
             for x in range(COLS):
 
                 tipo = self.mapa[y][x]
@@ -546,12 +642,7 @@ class PersonaVisual:
             else None
         )
 
-        self.color = (
-            COLOR_SALIDA.get(
-                letra,
-                (90, 90, 90)
-            )
-        )
+        self.color = COLOR_SALIDA.get(letra, (151, 168, 190))
 
     @property
     def moviendo(self):
@@ -708,22 +799,6 @@ class PersonaVisual:
             return
 
         # ----------------------------------------------------
-        # Ruta
-        # ----------------------------------------------------
-
-        puntos = self.puntos_ruta()
-
-        if len(puntos) >= 2:
-
-            pygame.draw.lines(
-                pantalla,
-                self.color,
-                False,
-                puntos,
-                2
-            )
-
-        # ----------------------------------------------------
         # Posición
         # ----------------------------------------------------
 
@@ -752,12 +827,19 @@ class PersonaVisual:
             elevacion = 0
 
         # ----------------------------------------------------
+        # Sombra
+        pygame.draw.ellipse(
+            pantalla,
+            (177, 190, 204),
+            (centro_x - 8, centro_y + 12, 16, 5),
+        )
+
         # Pierna izquierda
         # ----------------------------------------------------
 
         pygame.draw.line(
             pantalla,
-            (40, 40, 50),
+            (49, 62, 79),
             (
                 centro_x - 3,
                 centro_y + 6 - elevacion
@@ -776,7 +858,7 @@ class PersonaVisual:
 
         pygame.draw.line(
             pantalla,
-            (40, 40, 50),
+            (49, 62, 79),
             (
                 centro_x + 3,
                 centro_y + 6 - elevacion
@@ -793,16 +875,30 @@ class PersonaVisual:
         # Cuerpo
         # ----------------------------------------------------
 
+        body_rect = pygame.Rect(
+            centro_x - 6,
+            centro_y - 9 - int(elevacion),
+            12,
+            15,
+        )
+        pygame.draw.rect(
+            pantalla,
+            (255, 255, 255),
+            body_rect.move(1, 2),
+            border_radius=5,
+        )
         pygame.draw.rect(
             pantalla,
             self.color,
-            (
-                centro_x - 5,
-                centro_y - 8 - int(elevacion),
-                10,
-                13
-            ),
-            border_radius=3
+            body_rect,
+            border_radius=5,
+        )
+        pygame.draw.line(
+            pantalla,
+            tuple(max(0, channel - 35) for channel in self.color),
+            (centro_x, body_rect.top + 3),
+            (centro_x, body_rect.bottom - 3),
+            1,
         )
 
         # ----------------------------------------------------
@@ -811,12 +907,18 @@ class PersonaVisual:
 
         pygame.draw.circle(
             pantalla,
-            (240, 205, 170),
+            (255, 220, 187),
             (
                 centro_x,
                 centro_y - 14 - int(elevacion)
             ),
             6
+        )
+        pygame.draw.circle(
+            pantalla,
+            (255, 247, 235),
+            (centro_x - 2, centro_y - 16 - int(elevacion)),
+            2,
         )
 
 
@@ -824,14 +926,19 @@ class PersonaVisual:
 # SIMULACIÓN
 # ============================================================
 
-class Simulacion:
+class Simulacion(Interfaz):
 
     def __init__(self):
         self.ai_client = GenerativeAIClient()
         self.ai_executor = ThreadPoolExecutor(max_workers=1)
+        self.mapa_pantalla = pygame.Surface((ANCHO, TOTAL_ROWS * TILE))
         self.ai_future = None
+        self.error_ia = None
         self.input_mode = False
         self.instruccion = ""
+        self.cursor_instruccion = 0
+        self.selection_anchor = None
+        self.preview_mode = False
         self.estado_ia = (
             "IA disponible"
             if self.ai_client.is_configured
@@ -839,19 +946,20 @@ class Simulacion:
         )
         self.fuente = pygame.font.SysFont(
             "arial",
-            14,
+            16,
             bold=True
         )
         self.preparar_simulacion()
         self.inicio_pendiente = True
         self.input_mode = True
         self.estado_ia = (
-            "Escribe una emergencia y pulsa Enter; F1-F4 carga escenarios locales."
+            "Describe la emergencia y especifica el piso; pulsa Enter."
         )
         pygame.key.start_text_input()
 
     def preparar_simulacion(self):
         self.edificio = Edificio()
+        self.edificio_previsualizacion = Edificio()
         self.instruccion = ""
         self.aplicar_escenario(
             EmergencyScenario(
@@ -862,13 +970,18 @@ class Simulacion:
             )
         )
 
-    def _posiciones_iniciales(self, cantidad, grid):
+    def _posiciones_iniciales(self, cantidad, grid, floor=1):
         disponibles = []
+        offset_y = (2 - floor) * FLOOR_HEIGHT
         for x, y, ancho, alto, _ in HABITACIONES:
-            for fila in range(y, y + alto):
+            for fila in range(y + offset_y, y + offset_y + alto):
                 for columna in range(x, x + ancho):
                     node = grid.get_node(columna, fila)
-                    if node is not None and node.walkable:
+                    if (
+                        node is not None
+                        and node.walkable
+                        and self.edificio.mapa[fila][columna] == PISO
+                    ):
                         disponibles.append(node.position)
         if cantidad > len(disponibles):
             return []
@@ -885,7 +998,7 @@ class Simulacion:
         people = apply_scenario(
             nuevo_grid,
             scenario,
-            self._posiciones_iniciales
+            lambda count, grid: self._posiciones_escenario(scenario, count, grid),
         )
         manager = EvacuationManager(nuevo_grid, people)
         manager.calculate_routes()
@@ -893,18 +1006,37 @@ class Simulacion:
         self.grid = nuevo_grid
         self.edificio.grid = nuevo_grid
         self.people = people
+        self.people_per_floor = {
+            1: sum(person.position[1] >= FLOOR_HEIGHT for person in people),
+            2: sum(person.position[1] < FLOOR_HEIGHT for person in people),
+        }
         self.manager = manager
         self.personas_visuales = [
             PersonaVisual(persona, self.edificio, 0)
             for persona in people
         ]
         self.escenario = scenario
+        self.error_ia = None
         self.tiempo = 0.0
         self.terminada = False
         self.tiempo_final = None
         self.inicio_pendiente = False
         self.instruccion = ""
-        self.estado_ia = f"Escenario aplicado: {scenario.emergency_type} en {scenario.zone}."
+        self.cursor_instruccion = 0
+        self.estado_ia = (
+            f"Escenario aplicado: {scenario.emergency_type} en {scenario.zone}, "
+            f"piso {scenario.floor}."
+        )
+
+    def _posiciones_escenario(self, scenario, cantidad, grid):
+        if scenario.people_by_floor is None:
+            return self._posiciones_iniciales(cantidad, grid, scenario.floor)
+        positions = []
+        for floor, floor_count in scenario.people_by_floor.items():
+            positions.extend(
+                self._posiciones_iniciales(floor_count, grid, floor)
+            )
+        return positions
 
     def volver_a_inicio(self):
         if self.ai_future is not None:
@@ -913,94 +1045,41 @@ class Simulacion:
         self.input_mode = True
         self.inicio_pendiente = True
         self.instruccion = ""
-        self.estado_ia = "Escribe una emergencia y pulsa Enter; F1-F4 carga escenarios locales."
+        self.cursor_instruccion = 0
+        self.estado_ia = "Describe la emergencia y especifica el piso; pulsa Enter."
+        self.error_ia = None
         pygame.key.start_text_input()
 
-    def manejar_evento(self, evento):
-        if evento.type == pygame.TEXTINPUT and self.input_mode:
-            if len(self.instruccion) < 180:
-                self.instruccion += evento.text
-            return
+    def reiniciar_simulacion(self):
+        if self.terminada:
+            self.aplicar_escenario(self.escenario)
 
-        if evento.type != pygame.KEYDOWN:
-            return
 
-        escenarios_locales = {
-            pygame.K_1: EmergencyScenario("incendio", "Laboratorio", 24),
-            pygame.K_KP1: EmergencyScenario("incendio", "Laboratorio", 24),
-            pygame.K_2: EmergencyScenario("zona_peligrosa", "Aula 2", 24),
-            pygame.K_KP2: EmergencyScenario("zona_peligrosa", "Aula 2", 24),
-            pygame.K_3: EmergencyScenario(
-                "salida_bloqueada",
-                "Pasillo central",
-                24,
-                blocked_exits=["B", "C"],
-            ),
-            pygame.K_KP3: EmergencyScenario(
-                "salida_bloqueada",
-                "Pasillo central",
-                24,
-                blocked_exits=["B", "C"],
-            ),
-            pygame.K_4: EmergencyScenario(
-                "combinada",
-                "Biblioteca",
-                24,
-                blocked_exits=["A", "D"],
-            ),
-            pygame.K_KP4: EmergencyScenario(
-                "combinada",
-                "Biblioteca",
-                24,
-                blocked_exits=["A", "D"],
-            ),
-        }
 
-        escenarios_inicio = {
-            pygame.K_F1: escenarios_locales[pygame.K_1],
-            pygame.K_F2: escenarios_locales[pygame.K_2],
-            pygame.K_F3: escenarios_locales[pygame.K_3],
-            pygame.K_F4: escenarios_locales[pygame.K_4],
-        }
 
-        if self.input_mode:
-            if evento.key in escenarios_inicio:
-                self.aplicar_escenario(escenarios_inicio[evento.key])
-            elif evento.key == pygame.K_ESCAPE:
-                if self.inicio_pendiente:
-                    self.estado_ia = "Escribe una emergencia o elige un escenario local con F1-F4."
-                else:
-                    self.input_mode = False
-                    self.instruccion = ""
-                    pygame.key.stop_text_input()
-                    self.estado_ia = "Entrada cancelada. Usa 1-4 para escenarios locales."
-            elif evento.key == pygame.K_BACKSPACE:
-                self.instruccion = self.instruccion[:-1]
-            elif evento.key == pygame.K_RETURN:
-                self.enviar_instruccion()
-            return
 
-        if evento.key == pygame.K_b:
-            self.volver_a_inicio()
-            return
 
-        if evento.key in escenarios_locales:
-            self.aplicar_escenario(escenarios_locales[evento.key])
-        elif evento.key in escenarios_inicio:
-            self.aplicar_escenario(escenarios_inicio[evento.key])
+
+
 
     def enviar_instruccion(self):
         if self.ai_future is not None:
             self.estado_ia = "Espera a que termine la solicitud actual."
             return
-        if not self.instruccion.strip():
-            self.estado_ia = "Escribe una instrucción antes de enviarla."
+        try:
+            self.ai_client.validate_instruction(self.instruccion)
+        except ValueError as error:
+            self.estado_ia = str(error)
+            self.error_ia = str(error)
             return
         instruction = self.instruccion.strip()
+        self.instruccion = instruction
+        self.cursor_instruccion = len(instruction)
         self.ai_future = self.ai_executor.submit(
             self.ai_client.generate_scenario,
             instruction,
         )
+        self.error_ia = None
         self.input_mode = False
         pygame.key.stop_text_input()
         self.estado_ia = "Consultando la API de IA..."
@@ -1017,6 +1096,7 @@ class Simulacion:
                 self.instruccion = ""
             except (ValueError, RuntimeError) as error:
                 self.estado_ia = str(error)
+                self.error_ia = str(error)
                 if self.inicio_pendiente:
                     self.input_mode = True
                     pygame.key.start_text_input()
@@ -1044,7 +1124,24 @@ class Simulacion:
             self.terminada = True
             self.tiempo_final = self.tiempo
 
+    def desplazamiento_terremoto(self):
+        if self.escenario.emergency_type != "terremoto" or self.terminada:
+            return (0, 0)
+        return (
+            round(
+                math.sin(self.tiempo * 37) * 5
+                + math.sin(self.tiempo * 61) * 2
+            ),
+            round(
+                math.cos(self.tiempo * 43) * 4
+                + math.sin(self.tiempo * 67) * 2
+            ),
+        )
+
     def dibujar(self, pantalla):
+        if self.preview_mode:
+            self.dibujar_previsualizacion(pantalla)
+            return
         if self.inicio_pendiente:
             self.dibujar_inicio(pantalla)
             return
@@ -1053,16 +1150,16 @@ class Simulacion:
         # Fondo
         # ----------------------------------------------------
 
-        pantalla.fill(
-            (20, 20, 25)
-        )
+        pantalla.fill(COLORS["background"])
+        mapa_pantalla = self.mapa_pantalla
+        mapa_pantalla.fill(COLORS["background"])
 
         # ----------------------------------------------------
         # Edificio
         # ----------------------------------------------------
 
         self.edificio.dibujar(
-            pantalla,
+            mapa_pantalla,
             self.tiempo
         )
 
@@ -1084,11 +1181,18 @@ class Simulacion:
             if len(puntos) > 1:
 
                 pygame.draw.lines(
-                    pantalla,
+                    mapa_pantalla,
+                    (255, 255, 255),
+                    False,
+                    puntos,
+                    5,
+                )
+                pygame.draw.lines(
+                    mapa_pantalla,
                     persona_visual.color,
                     False,
                     puntos,
-                    2
+                    2,
                 )
 
         # ----------------------------------------------------
@@ -1100,7 +1204,7 @@ class Simulacion:
         ):
 
             persona_visual.dibujar(
-                pantalla
+                mapa_pantalla
             )
 
         # ----------------------------------------------------
@@ -1109,8 +1213,11 @@ class Simulacion:
         # ----------------------------------------------------
 
         self.edificio.dibujar_nombres_salidas(
-            pantalla
+            mapa_pantalla
         )
+
+        desplazamiento = self.desplazamiento_terremoto()
+        pantalla.blit(mapa_pantalla, desplazamiento)
 
         # ----------------------------------------------------
         # Panel
@@ -1119,98 +1226,3 @@ class Simulacion:
         self.dibujar_panel(
             pantalla
         )
-
-    def dibujar_inicio(self, pantalla):
-        pantalla.fill((20, 20, 25))
-        titulo = pygame.font.SysFont("arial", 30, bold=True)
-        texto = pygame.font.SysFont("arial", 18)
-        lineas = [
-            ("SIMULADOR DE EVACUACIÓN", (255, 255, 255), titulo),
-            ("Describe el escenario de emergencia y pulsa Enter:", (220, 220, 225), texto),
-            (self.instruccion + ("|" if self.input_mode else ""), (120, 210, 255), texto),
-            ("Ejemplo: Incendio en el Laboratorio, bloquea la salida norte, 20 personas.", (190, 195, 205), texto),
-            ("Escenarios locales sin API: F1 incendio | F2 zona peligrosa | F3 bloqueos | F4 combinada", (190, 195, 205), texto),
-            (self.estado_ia, (255, 190, 110), texto),
-        ]
-
-        for index, (line, color, font) in enumerate(lineas):
-            while font.size(line)[0] > ANCHO - 48 and line:
-                line = line[:-2] + "…"
-            surface = font.render(line, True, color)
-            pantalla.blit(surface, (24, 80 + index * 54))
-
-    def dibujar_panel(self, pantalla):
-
-        y0 = ROWS * TILE
-
-        pygame.draw.rect(
-            pantalla,
-            (28, 30, 38),
-            (
-                0,
-                y0,
-                ANCHO,
-                PANEL
-            )
-        )
-
-        # ----------------------------------------------------
-        # Datos
-        # ----------------------------------------------------
-
-        resumen = self.manager.get_evacuation_summary()
-        usage = resumen.exit_usage
-        open_exits = ", ".join(
-            self.grid.get_exit_identifier(position)
-            for position in self.grid.get_exits()
-        ) or "ninguna"
-        blocked_exits = ", ".join(
-            self.grid.get_exit_identifier(position)
-            for position in sorted(self.grid.blocked_exits)
-        ) or "ninguna"
-
-        if self.terminada:
-            estado = (
-                "EVACUACIÓN COMPLETA"
-                if resumen.complete
-                else "SIMULACIÓN FINALIZADA: quedaron personas sin evacuar"
-            )
-            result_line = (
-                f"{estado} en {self.tiempo_final:.1f} s | "
-                f"Uso real de salidas: "
-                f"A {usage.get(EXIT_IDS['a'], 0)}  "
-                f"B {usage.get(EXIT_IDS['b'], 0)}  "
-                f"C {usage.get(EXIT_IDS['c'], 0)}  "
-                f"D {usage.get(EXIT_IDS['d'], 0)} | B: nuevo escenario"
-            )
-            result_color = (100, 230, 120) if resumen.complete else (255, 170, 90)
-        else:
-            result_line = (
-                f"En curso | Sin ruta: {resumen.people_without_route} | "
-                f"Personas pendientes: {resumen.people_not_evacuated} | "
-                f"B: nuevo escenario"
-            )
-            result_color = (230, 230, 235)
-
-        lines = [
-            (
-                f"Evacuados: {resumen.people_evacuated}/{resumen.total_people}  "
-                f"Tiempo: {self.tiempo:.1f} s"
-            ),
-            (
-                f"Salidas disponibles ({resumen.available_exits}): {open_exits}  |  "
-                f"Bloqueadas ({resumen.blocked_exits}): {blocked_exits}"
-            ),
-            result_line,
-        ]
-        colors = [
-            (255, 255, 255),
-            (255, 255, 255),
-            result_color,
-        ]
-
-        for index, (line, color) in enumerate(zip(lines, colors)):
-            while self.fuente.size(line)[0] > ANCHO - 24 and line:
-                line = line[:-2] + "…"
-            text = self.fuente.render(line, True, color)
-            pantalla.blit(text, (12, y0 + 4 + index * 25))

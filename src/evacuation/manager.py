@@ -17,10 +17,56 @@ class EvacuationManager:
         for person in self.people:
             if person.evacuated:
                 continue
-            best_exit, route, _ = self.astar.find_best_exit(
-                person.position,
-                exits
-            )
+            stair_route = getattr(self.grid, "stair_route", None)
+            if (
+                stair_route
+                and person.position[1] < self.grid.floor_offsets[1]
+            ):
+                route_to_stairs = self.astar.find_path(
+                    person.position,
+                    stair_route[0],
+                )
+                stair_landing = getattr(
+                    self.grid,
+                    "stair_exit_landing",
+                    stair_route[-1],
+                )
+                route_to_landing = self.astar.find_path(
+                    stair_route[-1],
+                    stair_landing,
+                )
+                best_exit, route_from_landing, _ = (
+                    self.astar.find_best_exit(stair_landing, exits)
+                )
+                if (
+                    route_to_stairs
+                    and route_to_landing
+                    and route_from_landing
+                ):
+                    route = (
+                        route_to_stairs
+                        + stair_route[1:]
+                        + route_to_landing[1:]
+                        + route_from_landing[1:]
+                    )
+                else:
+                    route = []
+            else:
+                blocked_stairs = None
+                floor_offsets = getattr(self.grid, "floor_offsets", None)
+                if stair_route and floor_offsets and (
+                    person.position[1] >= floor_offsets[1]
+                ):
+                    blocked_stairs = {
+                        position
+                        for position in stair_route
+                        if position[1] >= floor_offsets[1]
+                    }
+                best_exit, route, _ = self.astar.find_best_exit(
+                    person.position,
+                    exits,
+                    blocked_positions=blocked_stairs,
+                )
             person.target_exit = best_exit
             person.set_route(route)
             if best_exit == person.position:
