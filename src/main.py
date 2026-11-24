@@ -1,8 +1,143 @@
 import pygame
 
-pygame.init()
+from graphics.graficos import (
+    Simulacion,
+    ANCHO,
+    ALTO,
+    FPS
+)
 
-print("Pygame funcionando correctamente.")
-print(f"Versión de Pygame: {pygame.version.ver}")
 
-pygame.quit()
+def main():
+
+    pygame.init()
+    pygame.key.set_repeat(400, 35)
+
+    display_info = pygame.display.Info()
+    ancho_escritorio = display_info.current_w or ANCHO
+    alto_escritorio = display_info.current_h or ALTO
+    escala_inicial = min(
+        1,
+        ancho_escritorio / ANCHO,
+        alto_escritorio / ALTO,
+    )
+    tamano_ventana = (
+        round(ANCHO * escala_inicial),
+        round(ALTO * escala_inicial),
+    )
+    pantalla = pygame.display.set_mode(tamano_ventana, pygame.RESIZABLE)
+    lienzo = pygame.Surface((ANCHO, ALTO))
+
+    pygame.display.set_caption(
+        "Simulador de Evacuación Inteligente"
+    )
+
+    reloj = pygame.time.Clock()
+
+    simulacion = Simulacion()
+    simulacion.hover_position = (-1, -1)
+    pantalla_completa = False
+    tamano_ventana_actual = tamano_ventana
+
+    def canvas_rect():
+        screen_width, screen_height = pantalla.get_size()
+        scale = min(screen_width / ANCHO, screen_height / ALTO)
+        width = round(ANCHO * scale)
+        height = round(ALTO * scale)
+        return pygame.Rect(
+            (screen_width - width) // 2,
+            (screen_height - height) // 2,
+            width,
+            height,
+        )
+
+    def canvas_position(position):
+        destination = canvas_rect()
+        if not destination.collidepoint(position):
+            return (-1, -1)
+        x = round((position[0] - destination.x) * ANCHO / destination.width)
+        y = round((position[1] - destination.y) * ALTO / destination.height)
+        if not (0 <= x < ANCHO and 0 <= y < ALTO):
+            return (-1, -1)
+        return (x, y)
+
+    ejecutando = True
+
+    while ejecutando:
+
+        dt = reloj.tick(FPS) / 1000.0
+
+        # ----------------------------------------------------
+        # Eventos
+        # ----------------------------------------------------
+
+        for evento in pygame.event.get():
+            estaba_escribiendo = simulacion.input_mode
+            if evento.type == pygame.MOUSEBUTTONDOWN:
+                attributes = evento.dict.copy()
+                attributes["logical_pos"] = canvas_position(evento.pos)
+                evento = pygame.event.Event(evento.type, attributes)
+
+            if evento.type == pygame.QUIT:
+                ejecutando = False
+            elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_F11:
+                if pantalla_completa:
+                    pantalla = pygame.display.set_mode(
+                        tamano_ventana_actual,
+                        pygame.RESIZABLE,
+                    )
+                else:
+                    tamano_ventana_actual = pantalla.get_size()
+                    pantalla = pygame.display.set_mode(
+                        (0, 0),
+                        pygame.FULLSCREEN,
+                    )
+                pantalla_completa = not pantalla_completa
+            elif evento.type == pygame.VIDEORESIZE:
+                tamano_ventana_actual = evento.size
+                pantalla = pygame.display.set_mode(
+                    evento.size,
+                    pygame.RESIZABLE,
+                )
+            else:
+                simulacion.manejar_evento(evento)
+
+            if evento.type == pygame.KEYDOWN:
+                if (
+                    evento.key == pygame.K_ESCAPE
+                    and not estaba_escribiendo
+                ):
+                    ejecutando = False
+
+        # ----------------------------------------------------
+        # Actualizar simulación
+        # ----------------------------------------------------
+
+        simulacion.actualizar(dt)
+
+        # ----------------------------------------------------
+        # Dibujar
+        # ----------------------------------------------------
+
+        simulacion.dibujar(
+            lienzo
+        )
+        simulacion.hover_position = canvas_position(pygame.mouse.get_pos())
+
+        ancho, alto = pantalla.get_size()
+        destino = canvas_rect()
+        tamano_escala = (destino.width, destino.height)
+        imagen = pygame.transform.smoothscale(lienzo, tamano_escala)
+        pantalla.fill((12, 14, 19))
+        pantalla.blit(imagen, destino.topleft)
+        pygame.display.flip()
+
+    pygame.quit()
+    simulacion.ai_executor.shutdown(
+        wait=False,
+        cancel_futures=True
+    )
+
+
+if __name__ == "__main__":
+    main()
