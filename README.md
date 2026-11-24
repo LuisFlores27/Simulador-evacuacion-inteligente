@@ -3,18 +3,32 @@
 
 1. Descarguen e instalen Ollama desde [ollama.com/download](https://ollama.com/download).
 2. Abran Ollama desde el menú Inicio y déjenlo ejecutándose.
-3. Abran PowerShell y descarguen el modelo que usa el proyecto:
+3. Abran PowerShell y descarguen las versiones que quieran usar:
 
-ollama pull llama3.2
+ollama pull llama3.2:1b
+ollama pull llama3.2:3b
+ollama pull llama3.2:latest
 ollama list
 
-Esperen a que termine la descarga. Háganla una sola vez en cada computadora; `ollama list` debe mostrar `llama3.2` antes de usar la IA.
+Esperen a que termine cada descarga. Solo es necesario descargar una vez cada versión que vayan a usar.
 
 ### Iniciar el simulador
 
-Con Ollama ejecutándose y el entorno `.venv` activado, inicien el simulador:
+Con Ollama ejecutándose y el entorno `.venv` activado, elijan una versión en PowerShell y luego inicien el simulador. La variable solo aplica a esa ventana de PowerShell:
 
+# Versión 1B
+$env:GENAI_MODEL="llama3.2:1b"
 python src\main.py
+
+# Versión 3B
+$env:GENAI_MODEL="llama3.2:3b"
+python src\main.py
+
+# Etiqueta latest
+$env:GENAI_MODEL="llama3.2:latest"
+python src\main.py
+
+Ejecuten un bloque a la vez. En algunas instalaciones, `latest` puede apuntar a la misma versión que `3b`; `ollama list` muestra el ID para comprobarlo.
 
 Antes de entrar al proyecto, ejecuten la app de Ollama y luego ahora si abran el proyecto.
 

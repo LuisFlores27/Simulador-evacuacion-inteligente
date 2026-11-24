@@ -19,10 +19,10 @@ from graphics.config import (
     COLS,
     FLOORS,
     FPS,
-    PANEL,
     ROWS,
     STAIR_X,
     TILE,
+    TILE_X,
     TOTAL_ROWS,
 )
 from ui.interfaz import (
@@ -190,7 +190,7 @@ class Edificio:
         x, y = posicion
 
         return (
-            x * TILE + TILE // 2,
+            x * TILE_X + TILE_X // 2,
             y * TILE + TILE // 2
         )
 
@@ -213,9 +213,9 @@ class Edificio:
             for x in range(COLS):
 
                 rect = pygame.Rect(
-                    x * TILE,
+                    x * TILE_X,
                     y * TILE,
-                    TILE,
+                    TILE_X,
                     TILE
                 )
 
@@ -243,8 +243,8 @@ class Edificio:
                     pygame.draw.line(
                         pantalla,
                         (150, 99, 40),
-                        (x * TILE + 8, y * TILE + TILE - 6),
-                        (x * TILE + TILE - 8, y * TILE + TILE - 6),
+                        (x * TILE_X + 8, y * TILE + TILE - 6),
+                        (x * TILE_X + TILE_X - 8, y * TILE + TILE - 6),
                         2,
                     )
 
@@ -252,22 +252,22 @@ class Edificio:
                     pygame.draw.line(
                         pantalla,
                         (248, 251, 255),
-                        (x * TILE + 7, y * TILE + 7),
-                        (x * TILE + TILE - 7, y * TILE + 7),
+                        (x * TILE_X + 7, y * TILE + 7),
+                        (x * TILE_X + TILE_X - 7, y * TILE + 7),
                         2,
                     )
                     pygame.draw.line(
                         pantalla,
                         (113, 137, 165),
-                        (x * TILE + 4, y * TILE),
-                        (x * TILE + 4, y * TILE + TILE),
+                        (x * TILE_X + 4, y * TILE),
+                        (x * TILE_X + 4, y * TILE + TILE),
                         3,
                     )
                     pygame.draw.line(
                         pantalla,
                         (113, 137, 165),
-                        (x * TILE + TILE - 4, y * TILE),
-                        (x * TILE + TILE - 4, y * TILE + TILE),
+                        (x * TILE_X + TILE_X - 4, y * TILE),
+                        (x * TILE_X + TILE_X - 4, y * TILE + TILE),
                         3,
                     )
 
@@ -306,9 +306,9 @@ class Edificio:
         # ----------------------------------------------------
 
         for x, y in self.zonas_peligrosas:
-            px = x * TILE
+            px = x * TILE_X
             py = y * TILE
-            tile = pygame.Rect(px + 2, py + 2, TILE - 4, TILE - 4)
+            tile = pygame.Rect(px + 2, py + 2, TILE_X - 4, TILE - 4)
             pygame.draw.rect(
                 pantalla,
                 (255, 226, 166),
@@ -325,18 +325,18 @@ class Edificio:
             pygame.draw.circle(
                 pantalla,
                 (177, 106, 31),
-                (px + TILE // 2, py + TILE // 2),
+                (px + TILE_X // 2, py + TILE // 2),
                 8,
             )
             texto = self.fuente.render("!", True, (255, 250, 238))
             pantalla.blit(
                 texto,
-                texto.get_rect(center=(px + TILE // 2, py + TILE // 2)),
+                texto.get_rect(center=(px + TILE_X // 2, py + TILE // 2)),
             )
 
         for x, y in self.fuego:
 
-            px = x * TILE
+            px = x * TILE_X
             py = y * TILE
 
             # El valor cambia continuamente para producir
@@ -356,7 +356,7 @@ class Edificio:
                 48
             )
 
-            tile = pygame.Rect(px + 2, py + 2, TILE - 4, TILE - 4)
+            tile = pygame.Rect(px + 2, py + 2, TILE_X - 4, TILE - 4)
             pygame.draw.rect(pantalla, color_fuego, tile, border_radius=6)
             pygame.draw.rect(
                 pantalla,
@@ -378,7 +378,7 @@ class Edificio:
                 pantalla,
                 (255, 205, 101),
                 (
-                    px + TILE // 2,
+                    px + TILE_X // 2,
                     py + TILE // 2
                 ),
                 radio
@@ -392,7 +392,7 @@ class Edificio:
 
             x, y = posicion
 
-            px = x * TILE
+            px = x * TILE_X
             py = y * TILE
 
             bloqueada = (
@@ -405,13 +405,13 @@ class Edificio:
                 pygame.draw.rect(
                     pantalla,
                     tile_color,
-                    (px + 2, py + 2, TILE - 4, TILE - 4),
+                    (px + 2, py + 2, TILE_X - 4, TILE - 4),
                     border_radius=7,
                 )
                 pygame.draw.rect(
                     pantalla,
                     (255, 213, 214),
-                    (px + 2, py + 2, TILE - 4, TILE - 4),
+                    (px + 2, py + 2, TILE_X - 4, TILE - 4),
                     width=1,
                     border_radius=7,
                 )
@@ -424,7 +424,7 @@ class Edificio:
                         py + 6
                     ),
                     (
-                        px + TILE - 6,
+                        px + TILE_X - 6,
                         py + TILE - 6
                     ),
                     4
@@ -434,7 +434,7 @@ class Edificio:
                     pantalla,
                     (255, 255, 255),
                     (
-                        px + TILE - 6,
+                        px + TILE_X - 6,
                         py + 6
                     ),
                     (
@@ -449,13 +449,13 @@ class Edificio:
                 pygame.draw.rect(
                     pantalla,
                     COLORS["green"],
-                    (px + 2, py + 2, TILE - 4, TILE - 4),
+                    (px + 2, py + 2, TILE_X - 4, TILE - 4),
                     border_radius=7,
                 )
                 pygame.draw.rect(
                     pantalla,
                     (197, 255, 226),
-                    (px + 2, py + 2, TILE - 4, TILE - 4),
+                    (px + 2, py + 2, TILE_X - 4, TILE - 4),
                     width=1,
                     border_radius=7,
                 )
@@ -486,7 +486,7 @@ class Edificio:
                 True,
                 color_texto,
             )
-            badge = texto.get_rect(topleft=(x * TILE + 6, y * TILE + 4))
+            badge = texto.get_rect(topleft=(x * TILE_X + 6, y * TILE + 4))
             badge.inflate_ip(12, 6)
             pygame.draw.rect(
                 pantalla,
@@ -516,7 +516,7 @@ class Edificio:
 
             x, y = posicion
 
-            px = x * TILE
+            px = x * TILE_X
             py = y * TILE
 
             if posicion in self.bloqueadas:
@@ -532,7 +532,7 @@ class Edificio:
 
             rect = texto.get_rect(
                 center=(
-                    px + TILE // 2,
+                    px + TILE_X // 2,
                     py + TILE // 2
                 )
             )
@@ -931,7 +931,7 @@ class Simulacion(Interfaz):
     def __init__(self):
         self.ai_client = GenerativeAIClient()
         self.ai_executor = ThreadPoolExecutor(max_workers=1)
-        self.mapa_pantalla = pygame.Surface((ANCHO, TOTAL_ROWS * TILE))
+        self.mapa_pantalla = pygame.Surface((COLS * TILE_X, TOTAL_ROWS * TILE))
         self.ai_future = None
         self.error_ia = None
         self.input_mode = False
@@ -1158,6 +1158,25 @@ class Simulacion(Interfaz):
         # Edificio
         # ----------------------------------------------------
 
+        map_x, map_y = 24, 0
+        map_rect = pygame.Rect(
+            map_x - 8,
+            map_y - 8,
+            mapa_pantalla.get_width() + 16,
+            mapa_pantalla.get_height() + 16,
+        )
+        pygame.draw.rect(
+            pantalla,
+            (7, 13, 23),
+            map_rect.move(0, 8),
+            border_radius=18,
+        )
+        pygame.draw.rect(
+            pantalla,
+            COLORS["surface"],
+            map_rect,
+            border_radius=18,
+        )
         self.edificio.dibujar(
             mapa_pantalla,
             self.tiempo
@@ -1182,10 +1201,10 @@ class Simulacion(Interfaz):
 
                 pygame.draw.lines(
                     mapa_pantalla,
-                    (255, 255, 255),
+                    (245, 248, 255),
                     False,
                     puntos,
-                    5,
+                    4,
                 )
                 pygame.draw.lines(
                     mapa_pantalla,
@@ -1194,6 +1213,44 @@ class Simulacion(Interfaz):
                     puntos,
                     2,
                 )
+                segment_lengths = [
+                    math.hypot(
+                        end[0] - start[0],
+                        end[1] - start[1],
+                    )
+                    for start, end in zip(puntos, puntos[1:])
+                ]
+                route_length = sum(segment_lengths)
+                if route_length:
+                    marker_distance = (
+                        self.tiempo * 72
+                        + persona_visual.persona.person_id * 31
+                    ) % route_length
+                    for start, end, length in zip(
+                        puntos,
+                        puntos[1:],
+                        segment_lengths,
+                    ):
+                        if marker_distance <= length:
+                            ratio = marker_distance / length if length else 0
+                            marker = (
+                                round(start[0] + (end[0] - start[0]) * ratio),
+                                round(start[1] + (end[1] - start[1]) * ratio),
+                            )
+                            pygame.draw.circle(
+                                mapa_pantalla,
+                                persona_visual.color,
+                                marker,
+                                7,
+                            )
+                            pygame.draw.circle(
+                                mapa_pantalla,
+                                (255, 255, 255),
+                                marker,
+                                3,
+                            )
+                            break
+                        marker_distance -= length
 
         # ----------------------------------------------------
         # Personas
@@ -1217,7 +1274,22 @@ class Simulacion(Interfaz):
         )
 
         desplazamiento = self.desplazamiento_terremoto()
-        pantalla.blit(mapa_pantalla, desplazamiento)
+        pantalla.blit(
+            mapa_pantalla,
+            (map_x + desplazamiento[0], map_y + desplazamiento[1]),
+        )
+        map_heading = pygame.font.SysFont("arial", 14, bold=True).render(
+            "PLANO DE EVACUACIÓN",
+            True,
+            COLORS["accent"],
+        )
+        pygame.draw.rect(
+            pantalla,
+            COLORS["background_soft"],
+            (132, 4, 230, 26),
+            border_radius=8,
+        )
+        pantalla.blit(map_heading, (145, 9))
 
         # ----------------------------------------------------
         # Panel

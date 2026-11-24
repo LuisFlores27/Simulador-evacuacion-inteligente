@@ -1,24 +1,27 @@
+import math
+
 import pygame
 
 from emergency.scenario import EmergencyScenario
 from graphics.config import (
     ALTO,
     ANCHO,
-    PANEL,
+    COLS,
     TILE,
+    TILE_X,
     TOTAL_ROWS,
 )
 
 
-PREVIEW_BUTTON = pygame.Rect(24, 300, 230, 48)
-INSTRUCTION_TOP = 198
-INSTRUCTION_MIN_HEIGHT = 56
-INSTRUCTION_MAX_HEIGHT = ALTO - INSTRUCTION_TOP - 150
+PREVIEW_BUTTON = pygame.Rect(88, 520, 300, 58)
+INSTRUCTION_TOP = 360
+INSTRUCTION_MIN_HEIGHT = 72
+INSTRUCTION_MAX_HEIGHT = 260
 PREVIEW_BACK_BUTTON = pygame.Rect(
-    ANCHO - 228,
-    TOTAL_ROWS * TILE + 30,
-    200,
-    48,
+    ANCHO - 268,
+    ALTO - 76,
+    220,
+    56,
 )
 
 COLORS = {
@@ -84,7 +87,7 @@ class Interfaz:
 
     def _prompt_layout(self, font):
         margin = 12
-        field_width = ANCHO - 48
+        field_width = 832
         text_width = field_width - margin * 2
         lines = self._wrapped_instruction_lines(font, text_width)
         line_height = font.get_linesize() + 4
@@ -93,7 +96,7 @@ class Interfaz:
             INSTRUCTION_MAX_HEIGHT,
         )
         field = pygame.Rect(
-            24,
+            88,
             INSTRUCTION_TOP,
             field_width,
             field_height,
@@ -404,9 +407,9 @@ class Interfaz:
 
     def dibujar_inicio(self, pantalla):
         pantalla.fill(COLORS["background"])
-        titulo = pygame.font.SysFont("arial", 38, bold=True)
+        titulo = pygame.font.SysFont("arial", 48, bold=True)
         texto = pygame.font.SysFont("arial", 20)
-        etiqueta = pygame.font.SysFont("arial", 13, bold=True)
+        etiqueta = pygame.font.SysFont("arial", 14, bold=True)
         (
             campo,
             boton_previsualizacion,
@@ -415,6 +418,48 @@ class Interfaz:
             primera_linea_visible,
             cantidad_lineas_visibles,
         ) = self._prompt_layout(texto)
+        for x in range(24, ANCHO, 64):
+            pygame.draw.line(pantalla, (17, 29, 46), (x, 0), (x, ALTO), 1)
+        for y in range(24, ALTO, 64):
+            pygame.draw.line(pantalla, (17, 29, 46), (0, y), (ANCHO, y), 1)
+        pygame.draw.rect(
+            pantalla,
+            (7, 13, 23),
+            (64, 250, 880, 660),
+            border_radius=24,
+        )
+        pygame.draw.rect(
+            pantalla,
+            COLORS["surface"],
+            (64, 242, 880, 660),
+            border_radius=24,
+        )
+        pygame.draw.rect(
+            pantalla,
+            COLORS["border"],
+            (64, 242, 880, 660),
+            width=1,
+            border_radius=24,
+        )
+        pygame.draw.rect(
+            pantalla,
+            (7, 13, 23),
+            (992, 250, 864, 660),
+            border_radius=24,
+        )
+        pygame.draw.rect(
+            pantalla,
+            COLORS["surface"],
+            (992, 242, 864, 660),
+            border_radius=24,
+        )
+        pygame.draw.rect(
+            pantalla,
+            COLORS["border"],
+            (992, 242, 864, 660),
+            width=1,
+            border_radius=24,
+        )
         self._dibujar_motivo_edificio(pantalla)
         pygame.draw.rect(
             pantalla,
@@ -435,22 +480,35 @@ class Interfaz:
             (24, 42, 4, 92),
             border_radius=2,
         )
+        pulse = (math.sin(pygame.time.get_ticks() / 750) + 1) / 2
+        pygame.draw.circle(
+            pantalla,
+            (61, 190 + round(pulse * 45), 165 + round(pulse * 35)),
+            (42, 48),
+            6,
+        )
         chip = etiqueta.render("CENTRO DE CONTROL  /  EVACUACIÓN", True, COLORS["accent"])
-        pantalla.blit(chip, (42, 42))
-        title_surface = titulo.render("Simulador de evacuación", True, COLORS["text"])
+        pantalla.blit(chip, (60, 42))
+        title_surface = titulo.render("Evacuación inteligente", True, COLORS["text"])
         pantalla.blit(title_surface, (42, 66))
         subtitle = texto.render(
-            "Diseña una emergencia y observa cómo responde el edificio.",
+            "Simula emergencias. Visualiza rutas seguras. Protege cada vida.",
             True,
             COLORS["muted"],
         )
         pantalla.blit(subtitle, (44, 121))
 
-        field_label = etiqueta.render("INSTRUCCIÓN DEL ESCENARIO", True, COLORS["muted"])
-        pantalla.blit(field_label, (24, 177))
+        card_title = pygame.font.SysFont("arial", 24, bold=True).render(
+            "Diseña tu escenario",
+            True,
+            COLORS["text"],
+        )
+        pantalla.blit(card_title, (88, 282))
+        field_label = etiqueta.render("DESCRIBE LA EMERGENCIA", True, COLORS["muted"])
+        pantalla.blit(field_label, (88, 326))
         pygame.draw.rect(
             pantalla,
-            COLORS["surface"],
+            (14, 23, 37),
             campo,
             border_radius=12,
         )
@@ -467,6 +525,13 @@ class Interfaz:
         pantalla.set_clip(campo.inflate(-margen, -8))
         texto_x = campo.x + margen
         text_top = campo.y + 8
+        if not self.instruccion:
+            placeholder = texto.render(
+                "Ej.: Incendio en el laboratorio del segundo piso; evacúa a 24 personas.",
+                True,
+                COLORS["muted"],
+            )
+            pantalla.blit(placeholder, (texto_x, text_top))
         selection_start, selection_end = (
             self._selection_rect(
                 self.selection_anchor,
@@ -530,7 +595,7 @@ class Interfaz:
             )
         pantalla.set_clip(clip_anterior)
 
-        status_y = campo.bottom + 10
+        status_y = campo.bottom + 14
         if self.ai_future is not None:
             loading_font = pygame.font.SysFont("arial", 19, bold=True)
             dots = "." * (pygame.time.get_ticks() // 350 % 4)
@@ -539,13 +604,13 @@ class Interfaz:
                 True,
                 COLORS["accent"],
             )
-            pantalla.blit(loading, (24, status_y))
+            pantalla.blit(loading, (88, status_y))
         elif self.error_ia:
             error_font = pygame.font.SysFont("arial", 17)
             error_text = self.error_ia
             while (
                 error_text
-                and error_font.size(error_text)[0] > ANCHO - 48
+                and error_font.size(error_text)[0] > campo.width
             ):
                 error_text = error_text[:-2] + "…"
             error_surface = error_font.render(
@@ -553,20 +618,64 @@ class Interfaz:
                 True,
                 COLORS["red"],
             )
-            pantalla.blit(error_surface, (24, status_y))
+            pantalla.blit(error_surface, (88, status_y))
+        else:
+            helper_font = pygame.font.SysFont("arial", 16)
+            helper = helper_font.render(
+                "Indica el tipo de emergencia y el piso. Pulsa Enter para generar.",
+                True,
+                COLORS["muted"],
+            )
+            pantalla.blit(helper, (88, status_y))
 
         self._dibujar_boton(
             pantalla,
             boton_previsualizacion,
-            "Previsualizar mapa",
+            "PREVISUALIZAR ESCENARIO",
             COLORS["accent_soft"],
         )
+        shortcut_label = etiqueta.render("ATAJOS RÁPIDOS", True, COLORS["muted"])
+        pantalla.blit(shortcut_label, (88, 770))
+        shortcut_font = pygame.font.SysFont("arial", 16, bold=True)
+        for index, (key, name, color) in enumerate(
+            (
+                ("1", "Incendio", COLORS["red"]),
+                ("2", "Zona peligrosa", COLORS["amber"]),
+                ("3", "Salida bloqueada", COLORS["accent"]),
+                ("4", "Combinada", COLORS["green"]),
+            )
+        ):
+            x = 88 + index * 205
+            chip = pygame.Rect(x, 800, 190, 42)
+            pygame.draw.rect(
+                pantalla,
+                COLORS["background_soft"],
+                chip,
+                border_radius=10,
+            )
+            pygame.draw.circle(pantalla, color, (x + 22, 821), 5)
+            pantalla.blit(
+                shortcut_font.render(f"{key}  {name}", True, COLORS["text"]),
+                (x + 36, 810),
+            )
 
     def _dibujar_motivo_edificio(self, pantalla):
-        x = (ANCHO - 360) // 2
-        floor_y_positions = (600, 790)
+        x = 1040
+        floor_y_positions = (390, 650)
+        heading = pygame.font.SysFont("arial", 26, bold=True).render(
+            "El edificio, bajo control",
+            True,
+            COLORS["text"],
+        )
+        detail = pygame.font.SysFont("arial", 17).render(
+            "Personas, plantas y salidas en seguimiento en tiempo real",
+            True,
+            COLORS["muted"],
+        )
+        pantalla.blit(heading, (x, 290))
+        pantalla.blit(detail, (x, 329))
         for floor_index, y in enumerate(floor_y_positions):
-            floor = pygame.Rect(x, y, 360, 132)
+            floor = pygame.Rect(x, y, 760, 184)
             pygame.draw.rect(
                 pantalla,
                 COLORS["background_soft"],
@@ -581,10 +690,10 @@ class Interfaz:
                 border_radius=12,
             )
             for room in (
-                pygame.Rect(x + 12, y + 12, 99, 46),
-                pygame.Rect(x + 12, y + 74, 99, 46),
-                pygame.Rect(x + 249, y + 12, 99, 46),
-                pygame.Rect(x + 249, y + 74, 99, 46),
+                pygame.Rect(x + 18, y + 20, 198, 62),
+                pygame.Rect(x + 18, y + 102, 198, 62),
+                pygame.Rect(x + 544, y + 20, 198, 62),
+                pygame.Rect(x + 544, y + 102, 198, 62),
             ):
                 pygame.draw.rect(
                     pantalla,
@@ -600,7 +709,7 @@ class Interfaz:
                     border_radius=5,
                 )
 
-            corridor = pygame.Rect(x + 126, y + 12, 108, 108)
+            corridor = pygame.Rect(x + 246, y + 18, 268, 148)
             pygame.draw.rect(
                 pantalla,
                 (29, 47, 68),
@@ -610,70 +719,138 @@ class Interfaz:
             pygame.draw.rect(
                 pantalla,
                 COLORS["accent_soft"],
-                (x + 156, y + 44, 48, 46),
+                (x + 336, y + 59, 88, 58),
                 border_radius=6,
             )
-            for stair_y in range(y + 51, y + 85, 9):
+            for stair_y in range(y + 68, y + 112, 11):
                 pygame.draw.line(
                     pantalla,
                     (177, 219, 250),
-                    (x + 163, stair_y),
-                    (x + 197, stair_y),
-                    2,
+                    (x + 350, stair_y),
+                    (x + 410, stair_y),
+                    3,
                 )
 
+            for offset, color in (
+                (0, COLORS["accent"]),
+                (1, COLORS["green"]),
+                (2, COLORS["amber"]),
+            ):
+                person_x = x + 286 + int(
+                    (pygame.time.get_ticks() / 18 + offset * 120) % 180
+                )
+                pygame.draw.circle(
+                    pantalla,
+                    color,
+                    (person_x, y + 92 + (offset % 2) * 22),
+                    7,
+                )
+
+            floor_label = pygame.font.SysFont("arial", 14, bold=True).render(
+                f"PISO {2 - floor_index}",
+                True,
+                COLORS["muted"],
+            )
+            pantalla.blit(floor_label, (x + 20, y - 25))
             if floor_index == 1:
                 pygame.draw.rect(
                     pantalla,
                     COLORS["green"],
-                    (x + 170, y + 120, 20, 7),
+                    (x + 366, y + 169, 30, 8),
                     border_radius=3,
                 )
 
         pygame.draw.line(
             pantalla,
             COLORS["accent_soft"],
-            (ANCHO // 2, floor_y_positions[0] + 132),
-            (ANCHO // 2, floor_y_positions[1]),
+            (x + 380, floor_y_positions[0] + 184),
+            (x + 380, floor_y_positions[1]),
             3,
         )
 
     def _dibujar_boton(self, pantalla, rect, label, color):
-        shadow = rect.move(0, 3)
+        hovered = rect.collidepoint(
+            getattr(self, "hover_position", (-1, -1))
+        )
+        draw_rect = rect.move(0, -2) if hovered else rect
+        button_color = (
+            tuple(min(255, channel + 18) for channel in color)
+            if hovered
+            else color
+        )
+        shadow = draw_rect.move(0, 4)
         pygame.draw.rect(
             pantalla,
             (6, 11, 20),
             shadow,
-            border_radius=10,
+            border_radius=12,
         )
-        pygame.draw.rect(pantalla, color, rect, border_radius=10)
+        pygame.draw.rect(pantalla, button_color, draw_rect, border_radius=12)
         pygame.draw.rect(
             pantalla,
-            tuple(min(255, channel + 45) for channel in color),
-            rect,
+            tuple(min(255, channel + 45) for channel in button_color),
+            draw_rect,
             width=1,
-            border_radius=10,
+            border_radius=12,
         )
-        font = pygame.font.SysFont("arial", 17, bold=True)
+        font = pygame.font.SysFont("arial", 18, bold=True)
         text = font.render(label, True, COLORS["text"])
-        pantalla.blit(text, text.get_rect(center=rect.center))
+        pantalla.blit(text, text.get_rect(center=draw_rect.center))
 
     def dibujar_previsualizacion(self, pantalla):
         pantalla.fill(COLORS["background"])
-        self.edificio_previsualizacion.dibujar(pantalla, 0)
-        self.edificio_previsualizacion.dibujar_nombres_salidas(pantalla)
+        map_x, map_y = 24, 0
+        mapa = pygame.Surface((COLS * TILE_X, TOTAL_ROWS * TILE))
+        self.edificio_previsualizacion.dibujar(mapa, 0)
+        self.edificio_previsualizacion.dibujar_nombres_salidas(mapa)
         pygame.draw.rect(
             pantalla,
-            COLORS["background"],
-            (0, TOTAL_ROWS * TILE, ANCHO, PANEL),
+            COLORS["surface"],
+            (map_x - 8, map_y - 8, mapa.get_width() + 16, mapa.get_height() + 16),
+            border_radius=16,
         )
-        pygame.draw.line(
+        pantalla.blit(mapa, (map_x, map_y))
+        title_font = pygame.font.SysFont("arial", 28, bold=True)
+        body_font = pygame.font.SysFont("arial", 17)
+        pantalla.blit(
+            title_font.render("Vista previa", True, COLORS["text"]),
+            (1490, 76),
+        )
+        pantalla.blit(
+            body_font.render(
+                "Edificio de dos plantas",
+                True,
+                COLORS["muted"],
+            ),
+            (1492, 122),
+        )
+        pygame.draw.rect(
             pantalla,
-            COLORS["border"],
-            (0, TOTAL_ROWS * TILE),
-            (ANCHO, TOTAL_ROWS * TILE),
-            1,
+            COLORS["surface"],
+            (1480, 180, 416, 330),
+            border_radius=18,
         )
+        pantalla.blit(
+            body_font.render(
+                "Elementos del plano",
+                True,
+                COLORS["text"],
+            ),
+            (1506, 208),
+        )
+        for index, (label, color) in enumerate(
+            (
+                ("Salida disponible", COLORS["green"]),
+                ("Escalera", (185, 202, 221)),
+                ("Puerta", COLORS["amber"]),
+            )
+        ):
+            item_y = 270 + index * 58
+            pygame.draw.circle(pantalla, color, (1518, item_y + 10), 8)
+            pantalla.blit(
+                body_font.render(label, True, COLORS["muted"]),
+                (1540, item_y),
+            )
         self._dibujar_boton(
             pantalla,
             PREVIEW_BACK_BUTTON,
@@ -682,81 +859,181 @@ class Interfaz:
         )
 
     def dibujar_panel(self, pantalla):
-        y0 = TOTAL_ROWS * TILE
+        panel = pygame.Rect(1480, 140, 416, 800)
         pygame.draw.rect(
             pantalla,
-            COLORS["background"],
-            (0, y0, ANCHO, PANEL),
+            (7, 13, 23),
+            panel.move(0, 8),
+            border_radius=24,
         )
-        pygame.draw.line(
-            pantalla,
-            COLORS["border"],
-            (0, y0),
-            (ANCHO, y0),
-            2,
-        )
-        card = pygame.Rect(12, y0 + 8, ANCHO - 24, PANEL - 16)
         pygame.draw.rect(
             pantalla,
             COLORS["surface"],
-            card,
-            border_radius=14,
+            panel,
+            border_radius=24,
         )
         pygame.draw.rect(
             pantalla,
             COLORS["border"],
-            card,
+            panel,
             width=1,
-            border_radius=14,
+            border_radius=24,
         )
 
         resumen = self.manager.get_evacuation_summary()
+        title_font = pygame.font.SysFont("arial", 22, bold=True)
         label_font = pygame.font.SysFont("arial", 13, bold=True)
-        value_font = pygame.font.SysFont("arial", 27, bold=True)
+        value_font = pygame.font.SysFont("arial", 36, bold=True)
+        body_font = pygame.font.SysFont("arial", 15)
 
         def draw_text(text, font, color, position):
             pantalla.blit(font.render(text, True, color), position)
 
-        draw_text(
-            "PERSONAS EVACUADAS",
-            label_font,
-            COLORS["muted"],
-            (34, y0 + 16),
+        draw_text("EVACUACIÓN", title_font, COLORS["text"], (1504, 164))
+        status_text = "FINALIZADA" if self.terminada else "EN VIVO"
+        status_color = COLORS["amber"] if self.terminada else COLORS["green"]
+        pygame.draw.circle(pantalla, status_color, (1744, 177), 5)
+        draw_text(status_text, label_font, status_color, (1756, 170))
+
+        scenario_names = {
+            "incendio": "Incendio",
+            "zona_peligrosa": "Zona peligrosa",
+            "salida_bloqueada": "Salida bloqueada",
+            "combinada": "Emergencia combinada",
+            "terremoto": "Terremoto",
+        }
+        scenario = scenario_names.get(
+            self.escenario.emergency_type,
+            self.escenario.emergency_type.replace("_", " ").title(),
         )
         draw_text(
-            f"{resumen.people_evacuated} / {resumen.total_people}",
+            f"{scenario} · {self.escenario.zone}",
+            body_font,
+            COLORS["muted"],
+            (1504, 208),
+        )
+        draw_text(
+            f"Piso {self.escenario.floor} · {len(self.people)} personas",
+            body_font,
+            COLORS["muted"],
+            (1504, 230),
+        )
+
+        people_card = pygame.Rect(1504, 270, 368, 116)
+        pygame.draw.rect(
+            pantalla,
+            COLORS["background_soft"],
+            people_card,
+            border_radius=16,
+        )
+        pygame.draw.rect(
+            pantalla,
+            COLORS["border"],
+            people_card,
+            width=1,
+            border_radius=16,
+        )
+        draw_text("PERSONAS EVACUADAS", label_font, COLORS["muted"], (1524, 288))
+        draw_text(
+            f"{resumen.people_evacuated:02d} / {resumen.total_people:02d}",
             value_font,
             COLORS["text"],
-            (34, y0 + 36),
+            (1524, 310),
         )
+        if resumen.people_without_route:
+            draw_text(
+                f"{resumen.people_without_route} sin ruta",
+                body_font,
+                COLORS["red"],
+                (1732, 346),
+            )
+
+        draw_text("PROGRESO", label_font, COLORS["muted"], (1504, 414))
         progress = (
             resumen.people_evacuated / resumen.total_people
             if resumen.total_people
             else 0
         )
-        progress_track = pygame.Rect(36, y0 + 78, 340, 8)
+        percent = pygame.font.SysFont("arial", 22, bold=True).render(
+            f"{round(progress * 100)}%",
+            True,
+            COLORS["green"],
+        )
+        pantalla.blit(percent, (1814 - percent.get_width(), 408))
+        progress_track = pygame.Rect(1504, 444, 368, 10)
         pygame.draw.rect(
             pantalla,
             COLORS["background_soft"],
             progress_track,
-            border_radius=4,
+            border_radius=7,
         )
         if progress:
             progress_fill = progress_track.copy()
-            progress_fill.width = max(6, round(progress_track.width * progress))
+            progress_fill.width = max(14, round(progress_track.width * progress))
             pygame.draw.rect(
                 pantalla,
                 COLORS["green"],
                 progress_fill,
-                border_radius=4,
+                border_radius=7,
             )
 
-        draw_text(
-            "B: NUEVO ESCENARIO",
-            label_font,
-            COLORS["accent"],
-            (ANCHO - 250, y0 + 52),
+        draw_text("SALIDAS", label_font, COLORS["muted"], (1504, 484))
+        for index, (position, identifier) in enumerate(
+            sorted(self.grid.exits.items(), key=lambda item: item[1])
+        ):
+            x = 1504 + (index % 2) * 188
+            y = 512 + (index // 2) * 48
+            blocked = position in self.grid.blocked_exits
+            accent = COLORS["red"] if blocked else COLORS["green"]
+            tile = pygame.Rect(x, y, 176, 38)
+            pygame.draw.rect(
+                pantalla,
+                COLORS["background_soft"],
+                tile,
+                border_radius=10,
+            )
+            pygame.draw.circle(pantalla, accent, (x + 14, y + 19), 4)
+            draw_text(
+                f"{identifier} · {'BLOQ.' if blocked else 'LIBRE'}",
+                label_font,
+                accent,
+                (x + 28, y + 12),
+            )
+
+        draw_text("TIEMPO", label_font, COLORS["muted"], (1504, 640))
+        elapsed = self.tiempo_final if self.tiempo_final is not None else self.tiempo
+        time_value = pygame.font.SysFont("arial", 27, bold=True).render(
+            f"{elapsed:05.1f} s",
+            True,
+            COLORS["text"],
         )
+        pantalla.blit(time_value, (1504, 664))
+        if resumen.blocked_exits:
+            draw_text(
+                f"{resumen.blocked_exits} salida(s) bloqueada(s)",
+                body_font,
+                COLORS["red"],
+                (1504, 710),
+            )
+
+        controls = pygame.Rect(1504, 770, 368, 102)
+        pygame.draw.rect(
+            pantalla,
+            COLORS["background_soft"],
+            controls,
+            border_radius=14,
+        )
+        draw_text("ATAJOS", label_font, COLORS["accent"], (1524, 784))
+        draw_text("B · Nuevo escenario", body_font, COLORS["text"], (1524, 810))
+        draw_text(
+            "1–4 · Escenarios rápidos",
+            body_font,
+            COLORS["muted"],
+            (1524, 834),
+        )
+        if self.terminada:
+            draw_text("R · Reiniciar", body_font, COLORS["muted"], (1748, 834))
+
         if self.terminada:
             status = (
                 "EVACUACIÓN COMPLETA"
@@ -767,11 +1044,5 @@ class Interfaz:
                 status,
                 label_font,
                 COLORS["green"] if resumen.complete else COLORS["amber"],
-                (ANCHO - 250, y0 + 25),
-            )
-            draw_text(
-                "R: REINICIAR",
-                label_font,
-                COLORS["muted"],
-                (ANCHO - 250, y0 + 78),
+                (1504, 738),
             )

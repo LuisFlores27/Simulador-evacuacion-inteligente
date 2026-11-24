@@ -16,9 +16,14 @@ def main():
     display_info = pygame.display.Info()
     ancho_escritorio = display_info.current_w or ANCHO
     alto_escritorio = display_info.current_h or ALTO
+    escala_inicial = min(
+        1,
+        ancho_escritorio / ANCHO,
+        alto_escritorio / ALTO,
+    )
     tamano_ventana = (
-        min(ANCHO, max(480, ancho_escritorio - 80)),
-        min(ALTO, max(360, alto_escritorio - 100)),
+        round(ANCHO * escala_inicial),
+        round(ALTO * escala_inicial),
     )
     pantalla = pygame.display.set_mode(tamano_ventana, pygame.RESIZABLE)
     lienzo = pygame.Surface((ANCHO, ALTO))
@@ -30,13 +35,28 @@ def main():
     reloj = pygame.time.Clock()
 
     simulacion = Simulacion()
+    simulacion.hover_position = (-1, -1)
     pantalla_completa = False
     tamano_ventana_actual = tamano_ventana
 
-    def canvas_position(position):
+    def canvas_rect():
         screen_width, screen_height = pantalla.get_size()
-        x = round(position[0] * ANCHO / screen_width)
-        y = round(position[1] * ALTO / screen_height)
+        scale = min(screen_width / ANCHO, screen_height / ALTO)
+        width = round(ANCHO * scale)
+        height = round(ALTO * scale)
+        return pygame.Rect(
+            (screen_width - width) // 2,
+            (screen_height - height) // 2,
+            width,
+            height,
+        )
+
+    def canvas_position(position):
+        destination = canvas_rect()
+        if not destination.collidepoint(position):
+            return (-1, -1)
+        x = round((position[0] - destination.x) * ANCHO / destination.width)
+        y = round((position[1] - destination.y) * ALTO / destination.height)
         if not (0 <= x < ANCHO and 0 <= y < ALTO):
             return (-1, -1)
         return (x, y)
@@ -52,6 +72,7 @@ def main():
         # ----------------------------------------------------
 
         for evento in pygame.event.get():
+            estaba_escribiendo = simulacion.input_mode
             if evento.type == pygame.MOUSEBUTTONDOWN:
                 attributes = evento.dict.copy()
                 attributes["logical_pos"] = canvas_position(evento.pos)
@@ -79,7 +100,6 @@ def main():
                     pygame.RESIZABLE,
                 )
             else:
-                estaba_escribiendo = simulacion.input_mode
                 simulacion.manejar_evento(evento)
 
             if evento.type == pygame.KEYDOWN:
@@ -102,12 +122,14 @@ def main():
         simulacion.dibujar(
             lienzo
         )
+        simulacion.hover_position = canvas_position(pygame.mouse.get_pos())
 
         ancho, alto = pantalla.get_size()
-        tamano_escala = (ancho, alto)
+        destino = canvas_rect()
+        tamano_escala = (destino.width, destino.height)
         imagen = pygame.transform.smoothscale(lienzo, tamano_escala)
         pantalla.fill((12, 14, 19))
-        pantalla.blit(imagen, (0, 0))
+        pantalla.blit(imagen, destino.topleft)
         pygame.display.flip()
 
     pygame.quit()
