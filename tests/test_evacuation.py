@@ -468,6 +468,45 @@ class AIClientTests(unittest.TestCase):
         )
         self.assertNotIn("blocked_exits", result)
 
+    def test_earthquake_prompt_overrides_ai_hazards_and_user_constraints(self):
+        instruction = (
+            "Simula un terremoto, pon como zona peligrosa la biblioteca del "
+            "segundo piso, coloca 30 personas en total: 15 en cada piso, deja "
+            "disponible la salida oeste, las otras bloquealas"
+        )
+
+        class FakeResponse:
+            ok = True
+
+            def json(self):
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": (
+                                '{"emergency_type":"incendio",'
+                                '"zone":"Biblioteca","floor":2,"people":30,'
+                                '"danger_zones":[],"fire_zones":['
+                                '{"zone":"Biblioteca","floor":2}],'
+                                '"blocked_exits":["A"]}'
+                            )
+                        }
+                    }]
+                }
+
+        client = GenerativeAIClient()
+        with patch("ai.client.requests.post", return_value=FakeResponse()):
+            scenario = EmergencyScenario.from_dict(
+                client.generate_scenario(instruction)
+            )
+
+        self.assertEqual(scenario.emergency_type, "terremoto")
+        self.assertEqual(scenario.zone, "Biblioteca")
+        self.assertEqual(scenario.floor, 2)
+        self.assertEqual(scenario.people_by_floor, {1: 15, 2: 15})
+        self.assertEqual(scenario.danger_zones, ())
+        self.assertEqual(scenario.blocked_exits, ("B", "C", "D"))
+        self.assertEqual(scenario.fire_zones, ())
+
     def test_fire_covering_an_entire_floor_marks_every_zone_as_fire(self):
         instruction = "Simula un incendio en todo el segundo piso"
 
@@ -634,6 +673,12 @@ class PygameIntegrationTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         pygame.quit()
+
+    def test_logical_canvas_targets_1920_by_1080(self):
+        from graphics.config import ALTO, ANCHO
+
+        self.assertEqual((ANCHO, ALTO), (1920, 1080))
+        self.assertEqual(ANCHO / ALTO, 16 / 9)
 
     def test_simulation_applies_new_scenario_and_draws_final_panel(self):
         from graphics.graficos import ANCHO, ALTO, Simulacion
@@ -1290,7 +1335,7 @@ class PygameIntegrationTests(unittest.TestCase):
         finally:
             simulation.ai_executor.shutdown(wait=True, cancel_futures=True)
 
-    def test_simulation_panel_only_shows_evacuation_and_new_scenario_hint(self):
+    def test_simulation_dashboard_shows_live_metrics_and_controls(self):
         from types import SimpleNamespace
         from graphics.graficos import ANCHO, ALTO, Simulacion
 
@@ -1310,6 +1355,10 @@ class PygameIntegrationTests(unittest.TestCase):
             summary = SimpleNamespace(
                 people_evacuated=2,
                 total_people=5,
+                people_not_evacuated=3,
+                people_without_route=1,
+                available_exits=2,
+                blocked_exits=1,
                 complete=False,
             )
             with patch.object(
@@ -1325,11 +1374,11 @@ class PygameIntegrationTests(unittest.TestCase):
                 simulation.dibujar_panel(pygame.Surface((ANCHO, ALTO)))
 
             self.assertIn("PERSONAS EVACUADAS", rendered_text)
-            self.assertIn("2 / 5", rendered_text)
-            self.assertIn("B: NUEVO ESCENARIO", rendered_text)
-            self.assertNotIn("TIEMPO", rendered_text)
-            self.assertNotIn("SALIDAS", rendered_text)
-            self.assertNotIn("R: REINICIAR", rendered_text)
+            self.assertIn("PROGRESO", rendered_text)
+            self.assertIn("SALIDAS", rendered_text)
+            self.assertIn("TIEMPO", rendered_text)
+            self.assertIn("B · Nuevo escenario", rendered_text)
+            self.assertNotIn("R · Reiniciar", rendered_text)
 
             rendered_text.clear()
             simulation.terminada = True
@@ -1347,8 +1396,8 @@ class PygameIntegrationTests(unittest.TestCase):
                 simulation.dibujar_panel(pygame.Surface((ANCHO, ALTO)))
 
             self.assertIn("EVACUACIÓN COMPLETA", rendered_text)
-            self.assertIn("R: REINICIAR", rendered_text)
-            self.assertIn("B: NUEVO ESCENARIO", rendered_text)
+            self.assertIn("R · Reiniciar", rendered_text)
+            self.assertIn("B · Nuevo escenario", rendered_text)
         finally:
             simulation.ai_executor.shutdown(wait=True, cancel_futures=True)
 

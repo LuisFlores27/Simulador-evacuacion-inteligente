@@ -104,6 +104,14 @@ class GenerativeAIClient:
             ),
         )
         counts = {}
+        for match in re.finditer(
+            r"\b(?P<count>\d+)\s*(?:personas?)?\s+en\s+cada\s+piso\b",
+            instruction,
+            re.IGNORECASE,
+        ):
+            count = int(match.group("count"))
+            counts[1] = count
+            counts[2] = count
         for pattern in patterns:
             for match in pattern.finditer(instruction):
                 floor_text = match.group("floor").casefold()
@@ -303,6 +311,10 @@ class GenerativeAIClient:
         exclusive_pattern = re.compile(
             r"\b(?:solo|solamente|unicamente)\b"
         )
+        other_exits_blocked_pattern = re.compile(
+            r"\botras?\b.{0,40}\b(?:bloque\w*|obstru\w*|cerr\w*)\b|"
+            r"\b(?:bloque\w*|obstru\w*|cerr\w*)\b.{0,40}\botras?\b"
+        )
         open_pattern = re.compile(
             r"\b(?:abiert\w*|disponible\w*|libre\w*)\b"
         )
@@ -317,7 +329,10 @@ class GenerativeAIClient:
 
         for sentence in re.split(r"[.!?;\n]", normalized):
             if not (
-                exclusive_pattern.search(sentence)
+                (
+                    exclusive_pattern.search(sentence)
+                    or other_exits_blocked_pattern.search(sentence)
+                )
                 and open_pattern.search(sentence)
                 and exit_pattern.search(sentence)
             ):
@@ -457,6 +472,20 @@ class GenerativeAIClient:
             re.IGNORECASE,
         ):
             parsed["emergency_type"] = "terremoto"
+            normalized_instruction = unicodedata.normalize(
+                "NFKD",
+                instruction.casefold(),
+            )
+            normalized_instruction = "".join(
+                character
+                for character in normalized_instruction
+                if not unicodedata.combining(character)
+            )
+            if not re.search(
+                r"\b(?:incendi\w*|fueg\w*|llama\w*)\b",
+                normalized_instruction,
+            ):
+                parsed.pop("fire_zones", None)
         explicit_danger_zones = self._explicit_danger_zones(instruction)
         if parsed["emergency_type"] == "terremoto" and explicit_danger_zones:
             parsed["zone"] = explicit_danger_zones[0]["zone"]
